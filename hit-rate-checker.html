@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hit Rate Checker | The +EV Cave</title>
+  <meta name="description" content="Check historical hit rates for player props across NBA, MLB, and NHL." />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0d0f; font-family: 'IBM Plex Mono', monospace; }
+
+    .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 2px; padding: 16px 20px; margin-bottom: 12px; }
+
+    .sport-btn {
+      flex: 1; padding: 10px; border: 1px solid rgba(255,255,255,0.1);
+      background: transparent; color: rgba(255,255,255,0.4);
+      font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+      cursor: pointer; transition: all 0.15s; letter-spacing: 1px; font-weight: 600;
+    }
+    .sport-btn:first-child { border-radius: 2px 0 0 2px; }
+    .sport-btn:last-child  { border-radius: 0 2px 2px 0; border-left: none; }
+    .sport-btn.active { background: rgba(0,220,110,0.15); border-color: #00dc6e; color: #00dc6e; }
+
+    .search-wrap { position: relative; }
+    .tool-input {
+      width: 100%; background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1); border-radius: 2px;
+      color: #fff; font-family: 'IBM Plex Mono', monospace;
+      font-size: 13px; padding: 12px 16px; outline: none; transition: all 0.15s;
+    }
+    .tool-input:focus { border-color: rgba(0,220,110,0.5); background: rgba(0,220,110,0.04); }
+    .tool-input::placeholder { color: rgba(255,255,255,0.25); }
+
+    .dropdown {
+      position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+      background: #141a1f; border: 1px solid rgba(0,220,110,0.25);
+      border-top: none; border-radius: 0 0 2px 2px; max-height: 220px; overflow-y: auto;
+    }
+    .dropdown-item {
+      padding: 10px 16px; cursor: pointer; font-size: 12px; color: rgba(255,255,255,0.7);
+      border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.1s;
+    }
+    .dropdown-item:hover { background: rgba(0,220,110,0.1); color: #00dc6e; }
+    .dropdown-item .sub { font-size: 10px; color: rgba(255,255,255,0.3); margin-top: 2px; }
+
+    .stat-select {
+      width: 100%; background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1); border-radius: 2px;
+      color: #fff; font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px; padding: 12px 16px; outline: none; cursor: pointer;
+      appearance: none; -webkit-appearance: none;
+    }
+    .stat-select option { background: #141a1f; }
+
+    .ou-btn {
+      flex: 1; padding: 10px; border: 1px solid rgba(255,255,255,0.1);
+      background: transparent; color: rgba(255,255,255,0.4);
+      font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+      cursor: pointer; transition: all 0.15s; font-weight: 700;
+    }
+    .ou-btn:first-child { border-radius: 2px 0 0 2px; }
+    .ou-btn:last-child  { border-radius: 0 2px 2px 0; border-left: none; }
+    .ou-over.active  { background: rgba(0,220,110,0.15); border-color: #00dc6e; color: #00dc6e; }
+    .ou-under.active { background: rgba(255,77,77,0.12); border-color: #ff4d4d; color: #ff6b6b; }
+
+    .check-btn {
+      width: 100%; padding: 14px; background: #00dc6e; color: #0a0d0f;
+      border: none; border-radius: 2px; font-family: 'IBM Plex Mono', monospace;
+      font-size: 13px; font-weight: 700; letter-spacing: 1px; cursor: pointer;
+      transition: all 0.15s; margin-bottom: 12px;
+    }
+    .check-btn:hover { background: #00f57a; }
+    .check-btn:disabled { background: rgba(0,220,110,0.3); cursor: not-allowed; color: rgba(0,0,0,0.5); }
+
+    .rate-card {
+      flex: 1; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 2px; padding: 14px 10px; text-align: center;
+    }
+    .rate-card .label { font-size: 10px; color: rgba(255,255,255,0.3); letter-spacing: 1.5px; margin-bottom: 6px; }
+    .rate-card .pct { font-size: 26px; font-family: 'Syne', sans-serif; font-weight: 800; }
+    .rate-card .fraction { font-size: 10px; color: rgba(255,255,255,0.3); margin-top: 3px; }
+    .rate-hot  { border-color: rgba(0,220,110,0.4) !important; }
+    .rate-mid  { border-color: rgba(255,200,0,0.3) !important; }
+    .rate-cold { border-color: rgba(255,77,77,0.3) !important; }
+
+    .game-row {
+      display: flex; align-items: center; gap: 10px; padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 11px;
+    }
+    .game-row:last-child { border-bottom: none; }
+    .hit-dot  { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot-hit  { background: #00dc6e; }
+    .dot-miss { background: #ff4d4d; }
+
+    .label-sm { font-size: 10px; color: rgba(255,255,255,0.3); letter-spacing: 2px; margin-bottom: 12px; }
+    .section-title { font-size: 12px; color: rgba(255,255,255,0.6); font-weight: 600; margin-bottom: 10px; letter-spacing: 0.5px; }
+
+    .loading-wrap { text-align: center; padding: 40px 20px; }
+    .spinner { display: inline-block; width: 32px; height: 32px; border: 2px solid rgba(0,220,110,0.2); border-top-color: #00dc6e; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-box { background: rgba(255,77,77,0.08); border: 1px solid rgba(255,77,77,0.3); border-radius: 2px; padding: 14px 16px; font-size: 12px; color: #ff6b6b; margin-bottom: 12px; }
+    .key-note { font-size: 10px; color: rgba(255,255,255,0.25); margin-top: 6px; }
+    .key-note a { color: rgba(0,220,110,0.6); text-decoration: none; }
+    .key-note a:hover { color: #00dc6e; }
+
+    .avg-badge { display: inline-block; background: rgba(0,220,110,0.1); border: 1px solid rgba(0,220,110,0.25); border-radius: 2px; padding: 4px 10px; font-size: 11px; color: #00dc6e; font-weight: 600; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ─── PASTE YOUR FREE BALLDONTLIE API KEY HERE ────────────────────────────────
+// Get one free at: https://www.balldontlie.io (just needs an email signup)
+const BDL_KEY = "296a4c03-94ec-4cfd-a472-8e4d464c9167";
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Stat Configs ──────────────────────────────────────────────────────────────
+const NBA_STATS = [
+  { label: "Points",           calc: g => g.pts },
+  { label: "Rebounds",         calc: g => g.reb },
+  { label: "Assists",          calc: g => g.ast },
+  { label: "Steals",           calc: g => g.stl },
+  { label: "Blocks",           calc: g => g.blk },
+  { label: "3-Pointers Made",  calc: g => g.fg3m },
+  { label: "Turnovers",        calc: g => g.turnover },
+  { label: "Pts + Reb + Ast",  calc: g => (g.pts||0)+(g.reb||0)+(g.ast||0) },
+  { label: "Pts + Reb",        calc: g => (g.pts||0)+(g.reb||0) },
+  { label: "Pts + Ast",        calc: g => (g.pts||0)+(g.ast||0) },
+  { label: "Reb + Ast",        calc: g => (g.reb||0)+(g.ast||0) },
+  { label: "Stl + Blk",        calc: g => (g.stl||0)+(g.blk||0) },
+];
+
+const MLB_HITTING_STATS = [
+  { label: "Hits",                 calc: s => s.hits },
+  { label: "Total Bases",          calc: s => { const sg = (s.hits||0)-(s.doubles||0)-(s.triples||0)-(s.homeRuns||0); return sg + 2*(s.doubles||0) + 3*(s.triples||0) + 4*(s.homeRuns||0); }},
+  { label: "Home Runs",            calc: s => s.homeRuns },
+  { label: "RBIs",                 calc: s => s.rbi },
+  { label: "Runs",                 calc: s => s.runs },
+  { label: "Stolen Bases",         calc: s => s.stolenBases },
+  { label: "Strikeouts (Batter)",  calc: s => s.strikeOuts },
+  { label: "Walks",                calc: s => s.baseOnBalls },
+  { label: "Hits + Runs + RBIs",   calc: s => (s.hits||0)+(s.runs||0)+(s.rbi||0) },
+];
+
+const MLB_PITCHING_STATS = [
+  { label: "Strikeouts (Pitcher)", calc: s => s.strikeOuts },
+  { label: "Hits Allowed",         calc: s => s.hits },
+  { label: "Earned Runs",          calc: s => s.earnedRuns },
+  { label: "Walks Allowed",        calc: s => s.baseOnBalls },
+  { label: "Outs Recorded",        calc: s => { const p = (s.inningsPitched||"0").toString().split("."); return parseInt(p[0])*3+(parseInt(p[1])||0); }},
+];
+
+const NHL_STATS = [
+  { label: "Goals",          calc: g => g.goals },
+  { label: "Assists",        calc: g => g.assists },
+  { label: "Points",         calc: g => (g.goals||0)+(g.assists||0) },
+  { label: "Shots on Goal",  calc: g => g.shots },
+  { label: "Hits",           calc: g => g.hits },
+  { label: "Blocked Shots",  calc: g => g.blockedShots },
+  { label: "PP Points",      calc: g => (g.powerPlayGoals||0)+(g.powerPlayAssists||0) },
+];
+
+// ── API helpers ───────────────────────────────────────────────────────────────
+async function searchNBAPlayers(name) {
+  const r = await fetch(`https://api.balldontlie.io/v1/players?search=${encodeURIComponent(name)}&per_page=10`, {
+    headers: { Authorization: BDL_KEY }
+  });
+  if (!r.ok) throw new Error("NBA API error. Check your BallDontLie API key.");
+  const d = await r.json();
+  return d.data.map(p => ({ id: p.id, name: `${p.first_name} ${p.last_name}`, sub: p.team?.full_name || "Free Agent" }));
+}
+
+async function fetchNBAGameLog(playerId) {
+  const season = 2024;
+  let all = [], page = 1, totalPages = 1;
+  while (page <= totalPages && page <= 3) {
+    const r = await fetch(`https://api.balldontlie.io/v1/stats?player_ids[]=${playerId}&seasons[]=${season}&per_page=100&page=${page}`, {
+      headers: { Authorization: BDL_KEY }
+    });
+    if (!r.ok) throw new Error("Could not fetch NBA stats.");
+    const d = await r.json();
+    totalPages = d.meta?.total_pages || 1;
+    const played = d.data.filter(g => g.min && g.min !== "00" && g.min !== "0:00" && g.min !== "00:00");
+    all = all.concat(played);
+    page++;
+  }
+  return all.sort((a, b) => new Date(b.game.date) - new Date(a.game.date));
+}
+
+async function searchMLBPlayers(name) {
+  const r = await fetch(`https://statsapi.mlb.com/api/v1/people/search?names=${encodeURIComponent(name)}&sportId=1&active=true`);
+  if (!r.ok) throw new Error("MLB API error.");
+  const d = await r.json();
+  if (!d.people) return [];
+  return d.people.slice(0, 10).map(p => ({
+    id: p.id, name: p.fullName,
+    sub: `${p.primaryPosition?.abbreviation || ""} - ${p.currentTeam?.name || ""}`.trim()
+  }));
+}
+
+async function fetchMLBGameLog(playerId, group = "hitting") {
+  const season = 2025;
+  const r = await fetch(`https://statsapi.mlb.com/api/v1/people/${playerId}/stats?stats=gameLog&season=${season}&sportId=1&group=${group}`);
+  if (!r.ok) throw new Error("Could not fetch MLB stats.");
+  const d = await r.json();
+  const splits = d.stats?.[0]?.splits || [];
+  return splits.map(s => ({ date: s.date, stat: s.stat, opponent: s.opponent?.name || "" })).reverse();
+}
+
+async function searchNHLPlayers(name) {
+  const r = await fetch(`https://search.d3.nhle.com/api/v1/search?q=${encodeURIComponent(name)}&type=player&active=true`);
+  if (!r.ok) throw new Error("NHL API error.");
+  const d = await r.json();
+  return d.slice(0, 10).map(p => ({
+    id: p.playerId, name: p.name,
+    sub: `${p.positionCode || ""} - ${p.teamAbbrev || ""}`.trim()
+  }));
+}
+
+async function fetchNHLGameLog(playerId) {
+  const r = await fetch(`https://api-web.nhle.com/v1/player/${playerId}/game-log/now`);
+  if (!r.ok) throw new Error("Could not fetch NHL stats.");
+  const d = await r.json();
+  return (d.gameLog || []).slice(0, 50);
+}
+
+// ── Utility ───────────────────────────────────────────────────────────────────
+function calcHitRate(games, statFn, line, ou) {
+  const vals = games.map(statFn).filter(v => v !== null && v !== undefined && !isNaN(v));
+  if (!vals.length) return { rate: 0, hits: 0, total: 0, avg: 0 };
+  const hits  = vals.filter(v => ou === "over" ? v > line : v < line).length;
+  const avg   = vals.reduce((a,b) => a+b, 0) / vals.length;
+  return { rate: Math.round((hits / vals.length) * 100), hits, total: vals.length, avg: Math.round(avg * 10) / 10 };
+}
+
+function rateColor(rate) {
+  if (rate >= 65) return "#00dc6e";
+  if (rate >= 50) return "#ffc800";
+  return "#ff6b6b";
+}
+
+function rateClass(rate) {
+  if (rate >= 65) return "rate-hot";
+  if (rate >= 50) return "rate-mid";
+  return "rate-cold";
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+function HitRateChecker() {
+  const [sport, setSport]           = useState("NBA");
+  const [query, setQuery]           = useState("");
+  const [results, setResults]       = useState([]);
+  const [player, setPlayer]         = useState(null);
+  const [statIdx, setStatIdx]       = useState(0);
+  const [mlbGroup, setMlbGroup]     = useState("hitting");
+  const [line, setLine]             = useState("");
+  const [ou, setOu]                 = useState("over");
+  const [loading, setLoading]       = useState(false);
+  const [searching, setSearching]   = useState(false);
+  const [error, setError]           = useState("");
+  const [gameLog, setGameLog]       = useState([]);
+  const [showDrop, setShowDrop]     = useState(false);
+  const searchTimer                 = useRef(null);
+  const wrapRef                     = useRef(null);
+
+  const statList = sport === "NBA" ? NBA_STATS
+    : sport === "NHL" ? NHL_STATS
+    : mlbGroup === "hitting" ? MLB_HITTING_STATS : MLB_PITCHING_STATS;
+
+  // Reset on sport change
+  useEffect(() => {
+    setQuery(""); setResults([]); setPlayer(null);
+    setStatIdx(0); setLine(""); setGameLog([]); setError("");
+  }, [sport]);
+
+  // Reset stat idx on mlbGroup change
+  useEffect(() => { setStatIdx(0); }, [mlbGroup]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = e => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setShowDrop(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Debounced search
+  const handleQuery = (v) => {
+    setQuery(v); setPlayer(null); setGameLog([]); setError("");
+    clearTimeout(searchTimer.current);
+    if (v.length < 2) { setResults([]); setShowDrop(false); return; }
+    searchTimer.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        let res = [];
+        if (sport === "NBA") res = await searchNBAPlayers(v);
+        else if (sport === "MLB") res = await searchMLBPlayers(v);
+        else res = await searchNHLPlayers(v);
+        setResults(res); setShowDrop(true);
+      } catch(e) { setError(e.message); }
+      finally { setSearching(false); }
+    }, 450);
+  };
+
+  const selectPlayer = (p) => {
+    setPlayer(p); setQuery(p.name); setShowDrop(false); setResults([]); setGameLog([]); setError("");
+  };
+
+  const checkHistory = async () => {
+    if (!player || !line) return;
+    setLoading(true); setError(""); setGameLog([]);
+    try {
+      let log = [];
+      if (sport === "NBA") log = await fetchNBAGameLog(player.id);
+      else if (sport === "MLB") log = await fetchMLBGameLog(player.id, mlbGroup);
+      else log = await fetchNHLGameLog(player.id);
+      if (!log.length) throw new Error("No recent game data found for this player.");
+      setGameLog(log);
+    } catch(e) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+
+  // Compute stats from game log
+  const statFn = statList[statIdx]?.calc;
+  const lineNum = parseFloat(line);
+  const hasResults = gameLog.length > 0 && statFn && !isNaN(lineNum);
+
+  const getVal = (game) => {
+    try {
+      if (sport === "MLB") return statFn(game.stat);
+      return statFn(game);
+    } catch { return null; }
+  };
+
+  const l5  = hasResults ? calcHitRate(gameLog.slice(0,5),  getVal, lineNum, ou) : null;
+  const l10 = hasResults ? calcHitRate(gameLog.slice(0,10), getVal, lineNum, ou) : null;
+  const l20 = hasResults ? calcHitRate(gameLog.slice(0,20), getVal, lineNum, ou) : null;
+
+  const displayGames = gameLog.slice(0, 20);
+
+  const canCheck = player && line && !isNaN(parseFloat(line)) && !loading;
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0a0d0f",
+      backgroundImage: "radial-gradient(ellipse at 20% 0%, rgba(0,200,100,0.05) 0%, transparent 50%)",
+      padding: "24px 16px", display: "flex", justifyContent: "center" }}>
+      <div style={{ width: "100%", maxWidth: 580 }}>
+
+        {/* Header */}
+        <div style={{ marginBottom: 28, textAlign: "center" }}>
+          <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 26, fontWeight: 800, color: "#fff", letterSpacing: "-0.5px" }}>
+            HIT RATE <span style={{ color: "#00dc6e" }}>CHECKER</span>
+          </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,0.3)", letterSpacing: "2px", textTransform: "uppercase" }}>
+            The +EV Cave · Historical Prop Data
+          </div>
+        </div>
+
+        {/* Sport Selector */}
+        <div className="card">
+          <div className="label-sm">SELECT SPORT</div>
+          <div style={{ display: "flex" }}>
+            {["NBA","MLB","NHL"].map(s => (
+              <button key={s} className={"sport-btn" + (sport === s ? " active" : "")} onClick={() => setSport(s)}>{s}</button>
+            ))}
+          </div>
+          {sport === "NBA" && BDL_KEY === "YOUR_BALLDONTLIE_KEY_HERE" && (
+            <div className="key-note" style={{ marginTop: 10 }}>
+              NBA requires a free API key. Get one at <a href="https://www.balldontlie.io" target="_blank">balldontlie.io</a> then add it to the top of this file.
+            </div>
+          )}
+        </div>
+
+        {/* MLB Group Toggle */}
+        {sport === "MLB" && (
+          <div className="card">
+            <div className="label-sm">PLAYER TYPE</div>
+            <div style={{ display: "flex" }}>
+              <button className={"sport-btn" + (mlbGroup === "hitting" ? " active" : "")} onClick={() => setMlbGroup("hitting")}>HITTER</button>
+              <button className={"sport-btn" + (mlbGroup === "pitching" ? " active" : "")} onClick={() => setMlbGroup("pitching")}>PITCHER</button>
+            </div>
+          </div>
+        )}
+
+        {/* Player Search */}
+        <div className="card">
+          <div className="label-sm">PLAYER SEARCH</div>
+          <div className="search-wrap" ref={wrapRef}>
+            <input className="tool-input" type="text" placeholder={`Search ${sport} player...`}
+              value={query} onChange={e => handleQuery(e.target.value)}
+              onFocus={() => results.length && setShowDrop(true)} />
+            {searching && (
+              <div style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)" }}>
+                <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
+              </div>
+            )}
+            {showDrop && results.length > 0 && (
+              <div className="dropdown">
+                {results.map(p => (
+                  <div key={p.id} className="dropdown-item" onMouseDown={() => selectPlayer(p)}>
+                    <div>{p.name}</div>
+                    {p.sub && <div className="sub">{p.sub}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {player && (
+            <div style={{ marginTop: 8, fontSize: 11, color: "#00dc6e" }}>
+              ✓ {player.name} {player.sub ? `· ${player.sub}` : ""}
+            </div>
+          )}
+        </div>
+
+        {/* Stat + Line */}
+        <div className="card">
+          <div className="label-sm">STAT CATEGORY</div>
+          <select className="stat-select" value={statIdx} onChange={e => setStatIdx(parseInt(e.target.value))}>
+            {statList.map((s, i) => <option key={i} value={i}>{s.label}</option>)}
+          </select>
+        </div>
+
+        <div className="card">
+          <div className="label-sm">PROJECTION LINE</div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <input className="tool-input" type="number" step="0.5" placeholder="e.g. 13.5"
+              value={line} onChange={e => setLine(e.target.value)} style={{ flex: 1 }} />
+            <div style={{ display: "flex", flex: 0 }}>
+              <button className={"ou-btn ou-over" + (ou === "over" ? " active" : "")} onClick={() => setOu("over")}>OVER</button>
+              <button className={"ou-btn ou-under" + (ou === "under" ? " active" : "")} onClick={() => setOu("under")}>UNDER</button>
+            </div>
+          </div>
+        </div>
+
+        {error && <div className="error-box">{error}</div>}
+
+        <button className="check-btn" onClick={checkHistory} disabled={!canCheck}>
+          {loading ? "LOADING..." : "CHECK HISTORY"}
+        </button>
+
+        {loading && (
+          <div className="loading-wrap">
+            <div className="spinner" />
+            <div style={{ marginTop: 12, fontSize: 11, color: "rgba(255,255,255,0.3)" }}>Fetching game data...</div>
+          </div>
+        )}
+
+        {/* Results */}
+        {hasResults && !loading && (
+          <>
+            {/* Summary */}
+            <div className="card">
+              <div className="section-title">
+                {player.name} · {statList[statIdx].label} {ou === "over" ? "Over" : "Under"} {lineNum}
+              </div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                {[["L5", l5], ["L10", l10], ["L20", l20]].map(([lbl, r]) => r && (
+                  <div key={lbl} className={`rate-card ${rateClass(r.rate)}`}>
+                    <div className="label">{lbl}</div>
+                    <div className="pct" style={{ color: rateColor(r.rate) }}>{r.rate}%</div>
+                    <div className="fraction">{r.hits}/{r.total}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Season avg:</span>
+                <span className="avg-badge">{l20?.avg ?? "—"}</span>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>
+                  {l20?.avg !== undefined && lineNum
+                    ? l20.avg > lineNum
+                      ? `↑ ${(l20.avg - lineNum).toFixed(1)} above line`
+                      : `↓ ${(lineNum - l20.avg).toFixed(1)} below line`
+                    : ""}
+                </span>
+              </div>
+            </div>
+
+            {/* Game Log */}
+            <div className="card">
+              <div className="section-title">Last {displayGames.length} Games</div>
+              {displayGames.map((game, i) => {
+                const val = getVal(game);
+                const hit = val !== null && !isNaN(val) && (ou === "over" ? val > lineNum : val < lineNum);
+                const date = sport === "NBA" ? game.game?.date?.split("T")[0]
+                  : sport === "MLB" ? game.date
+                  : game.gameDate;
+                const opp = sport === "NBA" ? "" : sport === "MLB" ? game.opponent : game.opponentAbbrev;
+                return (
+                  <div key={i} className="game-row">
+                    <div className={`hit-dot ${hit ? "dot-hit" : "dot-miss"}`} />
+                    <div style={{ flex: 1, color: "rgba(255,255,255,0.5)", fontSize: 11 }}>
+                      {date ? date.toString().slice(0,10) : ""}
+                      {opp ? ` vs ${opp}` : ""}
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: hit ? "#00dc6e" : "#ff6b6b" }}>
+                      {val !== null && !isNaN(val) ? val : "—"}
+                    </div>
+                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", width: 36, textAlign: "right" }}>
+                      {hit ? "HIT" : "MISS"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        <div style={{ marginTop: 12, textAlign: "center", fontSize: 10, color: "rgba(255,255,255,0.18)", letterSpacing: "1px", paddingBottom: 24 }}>
+          THE +EV CAVE · PAID MEMBER TOOL · NOT FINANCIAL ADVICE
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<HitRateChecker />);
+</script>
+</body>
+</html>
