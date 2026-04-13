@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hit Rate Checker | The +EV Cave</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0d0f; font-family: 'IBM Plex Mono', monospace; }
+    .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 2px; padding: 16px 20px; margin-bottom: 12px; }
+    .sport-btn { flex: 1; padding: 10px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.4); font-family: 'IBM Plex Mono', monospace; font-size: 12px; cursor: pointer; transition: all 0.15s; letter-spacing: 1px; font-weight: 600; }
+    .sport-btn:first-child { border-radius: 2px 0 0 2px; }
+    .sport-btn:last-child  { border-radius: 0 2px 2px 0; border-left: none; }
+    .sport-btn.active { background: rgba(0,220,110,0.15); border-color: #00dc6e; color: #00dc6e; }
+    .search-wrap { position: relative; }
+    .tool-input { width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 2px; color: #fff; font-family: 'IBM Plex Mono', monospace; font-size: 13px; padding: 12px 16px; outline: none; transition: all 0.15s; }
+    .tool-input:focus { border-color: rgba(0,220,110,0.5); background: rgba(0,220,110,0.04); }
+    .tool-input::placeholder { color: rgba(255,255,255,0.25); }
+    .dropdown { position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: #141a1f; border: 1px solid rgba(0,220,110,0.25); border-top: none; border-radius: 0 0 2px 2px; max-height: 220px; overflow-y: auto; }
+    .dropdown-item { padding: 10px 16px; cursor: pointer; font-size: 12px; color: rgba(255,255,255,0.7); border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.1s; }
+    .dropdown-item:hover { background: rgba(0,220,110,0.1); color: #00dc6e; }
+    .dropdown-item .sub { font-size: 10px; color: rgba(255,255,255,0.3); margin-top: 2px; }
+    .stat-select { width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 2px; color: #fff; font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 12px 16px; outline: none; cursor: pointer; appearance: none; }
+    .stat-select option { background: #141a1f; }
+    .ou-btn { flex: 1; padding: 10px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.4); font-family: 'IBM Plex Mono', monospace; font-size: 12px; cursor: pointer; transition: all 0.15s; font-weight: 700; }
+    .ou-btn:first-child { border-radius: 2px 0 0 2px; }
+    .ou-btn:last-child  { border-radius: 0 2px 2px 0; border-left: none; }
+    .ou-over.active  { background: rgba(0,220,110,0.15); border-color: #00dc6e; color: #00dc6e; }
+    .ou-under.active { background: rgba(255,77,77,0.12); border-color: #ff4d4d; color: #ff6b6b; }
+    .check-btn { width: 100%; padding: 14px; background: #00dc6e; color: #0a0d0f; border: none; border-radius: 2px; font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 700; letter-spacing: 1px; cursor: pointer; transition: all 0.15s; margin-bottom: 12px; }
+    .check-btn:hover { background: #00f57a; }
+    .check-btn:disabled { background: rgba(0,220,110,0.3); cursor: not-allowed; }
+    .rate-card { flex: 1; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 2px; padding: 14px 10px; text-align: center; }
+    .rate-card .lbl { font-size: 10px; color: rgba(255,255,255,0.3); letter-spacing: 1.5px; margin-bottom: 6px; }
+    .rate-card .pct { font-size: 24px; font-family: 'Syne', sans-serif; font-weight: 800; }
+    .rate-card .frac { font-size: 10px; color: rgba(255,255,255,0.3); margin-top: 3px; }
+    .rate-card .avg  { font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 4px; }
+    .rate-hot  { border-color: rgba(0,220,110,0.4) !important; }
+    .rate-mid  { border-color: rgba(255,200,0,0.3) !important; }
+    .rate-cold { border-color: rgba(255,77,77,0.3) !important; }
+    .rate-grey { border-color: rgba(255,255,255,0.12) !important; }
+    .game-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 11px; }
+    .game-row:last-child { border-bottom: none; }
+    .hit-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot-hit  { background: #00dc6e; }
+    .dot-miss { background: #ff4d4d; }
+    .label-sm { font-size: 10px; color: rgba(255,255,255,0.3); letter-spacing: 2px; margin-bottom: 12px; }
+    .section-title { font-size: 12px; color: rgba(255,255,255,0.6); font-weight: 600; margin-bottom: 12px; }
+    .spinner { display: inline-block; width: 28px; height: 28px; border: 2px solid rgba(0,220,110,0.2); border-top-color: #00dc6e; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-box { background: rgba(255,77,77,0.08); border: 1px solid rgba(255,77,77,0.3); border-radius: 2px; padding: 14px 16px; font-size: 12px; color: #ff6b6b; margin-bottom: 12px; }
+    .h2h-empty { font-size: 11px; color: rgba(255,255,255,0.3); text-align: center; padding: 8px 0; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const BDL_KEY = "296a4c03-94ec-4cfd-a472-8e4d464c9167";
+
+// ── Dynamic season calculation ────────────────────────────────────────────────
+function getCurrentSeason(sport) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  if (sport === "NBA") return month >= 10 ? year : year - 1;
+  return year; // MLB uses current calendar year
+}
+
+// ── NBA team ID map ───────────────────────────────────────────────────────────
+const NBA_TEAMS = {
+  1:{n:"Atlanta Hawks",a:"ATL"},2:{n:"Boston Celtics",a:"BOS"},
+  3:{n:"Brooklyn Nets",a:"BKN"},4:{n:"Charlotte Hornets",a:"CHA"},
+  5:{n:"Chicago Bulls",a:"CHI"},6:{n:"Cleveland Cavaliers",a:"CLE"},
+  7:{n:"Dallas Mavericks",a:"DAL"},8:{n:"Denver Nuggets",a:"DEN"},
+  9:{n:"Detroit Pistons",a:"DET"},10:{n:"Golden State Warriors",a:"GSW"},
+  11:{n:"Houston Rockets",a:"HOU"},12:{n:"Indiana Pacers",a:"IND"},
+  13:{n:"LA Clippers",a:"LAC"},14:{n:"Los Angeles Lakers",a:"LAL"},
+  15:{n:"Memphis Grizzlies",a:"MEM"},16:{n:"Miami Heat",a:"MIA"},
+  17:{n:"Milwaukee Bucks",a:"MIL"},18:{n:"Minnesota Timberwolves",a:"MIN"},
+  19:{n:"New Orleans Pelicans",a:"NOP"},20:{n:"New York Knicks",a:"NYK"},
+  21:{n:"Oklahoma City Thunder",a:"OKC"},22:{n:"Orlando Magic",a:"ORL"},
+  23:{n:"Philadelphia 76ers",a:"PHI"},24:{n:"Phoenix Suns",a:"PHX"},
+  25:{n:"Portland Trail Blazers",a:"POR"},26:{n:"Sacramento Kings",a:"SAC"},
+  27:{n:"San Antonio Spurs",a:"SAS"},28:{n:"Toronto Raptors",a:"TOR"},
+  29:{n:"Utah Jazz",a:"UTA"},30:{n:"Washington Wizards",a:"WAS"},
+};
+
+// ── Stat configs ──────────────────────────────────────────────────────────────
+const NBA_STATS = [
+  {label:"Points",          calc:g=>g.pts},
+  {label:"Rebounds",        calc:g=>g.reb},
+  {label:"Assists",         calc:g=>g.ast},
+  {label:"Steals",          calc:g=>g.stl},
+  {label:"Blocks",          calc:g=>g.blk},
+  {label:"3-Pointers Made", calc:g=>g.fg3m},
+  {label:"Turnovers",       calc:g=>g.turnover},
+  {label:"Pts+Reb+Ast",     calc:g=>(g.pts||0)+(g.reb||0)+(g.ast||0)},
+  {label:"Pts+Reb",         calc:g=>(g.pts||0)+(g.reb||0)},
+  {label:"Pts+Ast",         calc:g=>(g.pts||0)+(g.ast||0)},
+  {label:"Reb+Ast",         calc:g=>(g.reb||0)+(g.ast||0)},
+  {label:"Stl+Blk",         calc:g=>(g.stl||0)+(g.blk||0)},
+];
+const MLB_HIT = [
+  {label:"Hits",               calc:s=>s.hits},
+  {label:"Total Bases",        calc:s=>{const sg=(s.hits||0)-(s.doubles||0)-(s.triples||0)-(s.homeRuns||0);return sg+2*(s.doubles||0)+3*(s.triples||0)+4*(s.homeRuns||0);}},
+  {label:"Home Runs",          calc:s=>s.homeRuns},
+  {label:"RBIs",               calc:s=>s.rbi},
+  {label:"Runs",               calc:s=>s.runs},
+  {label:"Stolen Bases",       calc:s=>s.stolenBases},
+  {label:"Strikeouts (Batter)",calc:s=>s.strikeOuts},
+  {label:"Walks",              calc:s=>s.baseOnBalls},
+  {label:"Hits+Runs+RBIs",     calc:s=>(s.hits||0)+(s.runs||0)+(s.rbi||0)},
+];
+const MLB_PIT = [
+  {label:"Strikeouts",   calc:s=>s.strikeOuts},
+  {label:"Hits Allowed", calc:s=>s.hits},
+  {label:"Earned Runs",  calc:s=>s.earnedRuns},
+  {label:"Walks",        calc:s=>s.baseOnBalls},
+  {label:"Outs Recorded",calc:s=>{const p=(s.inningsPitched||"0").toString().split(".");return parseInt(p[0])*3+(parseInt(p[1])||0);}},
+];
+const NHL_STATS = [
+  {label:"Goals",         calc:g=>g.goals},
+  {label:"Assists",       calc:g=>g.assists},
+  {label:"Points",        calc:g=>(g.goals||0)+(g.assists||0)},
+  {label:"Shots on Goal", calc:g=>g.shots},
+  {label:"Hits",          calc:g=>g.hits},
+  {label:"Blocked Shots", calc:g=>g.blockedShots},
+  {label:"PP Points",     calc:g=>(g.powerPlayGoals||0)+(g.powerPlayAssists||0)},
+];
+
+// ── API calls ─────────────────────────────────────────────────────────────────
+async function searchNBA(q) {
+  const r = await fetch(`https://api.balldontlie.io/v1/players?search=${encodeURIComponent(q)}&per_page=10`,{headers:{Authorization:BDL_KEY}});
+  if(!r.ok) throw new Error("NBA API error. Check your BallDontLie key.");
+  const d = await r.json();
+  return d.data.map(p=>({id:p.id,name:`${p.first_name} ${p.last_name}`,sub:p.team?.full_name||"",teamId:p.team?.id}));
+}
+
+async function fetchNBALog(playerId) {
+  const season = getCurrentSeason("NBA");
+  let all=[],page=1,totalPages=1;
+  while(page<=totalPages && page<=3){
+    const r = await fetch(`https://api.balldontlie.io/v1/stats?player_ids[]=${playerId}&seasons[]=${season}&per_page=100&page=${page}`,{headers:{Authorization:BDL_KEY}});
+    if(!r.ok) throw new Error("Could not fetch NBA stats.");
+    const d = await r.json();
+    totalPages = d.meta?.total_pages||1;
+    const played = d.data.filter(g=>g.min&&g.min!=="00"&&g.min!=="0:00"&&g.min!=="00:00");
+    // Attach opponent
+    played.forEach(g=>{
+      const isHome = g.game.home_team_id === g.team.id;
+      const oppId  = isHome ? g.game.visitor_team_id : g.game.home_team_id;
+      g._opp = NBA_TEAMS[oppId]?.a || NBA_TEAMS[oppId]?.n || `Team ${oppId}`;
+      g._date = g.game.date?.split("T")[0] || "";
+    });
+    all = all.concat(played);
+    page++;
+  }
+  return all.sort((a,b)=>new Date(b._date)-new Date(a._date));
+}
+
+async function searchMLB(q) {
+  const r = await fetch(`https://statsapi.mlb.com/api/v1/people/search?names=${encodeURIComponent(q)}&sportId=1&active=true`);
+  if(!r.ok) throw new Error("MLB API error.");
+  const d = await r.json();
+  if(!d.people) return [];
+  return d.people.slice(0,10).map(p=>({id:p.id,name:p.fullName,sub:`${p.primaryPosition?.abbreviation||""} · ${p.currentTeam?.name||""}`.trim()}));
+}
+
+async function fetchMLBLog(playerId, group) {
+  const season = getCurrentSeason("MLB");
+  const r = await fetch(`https://statsapi.mlb.com/api/v1/people/${playerId}/stats?stats=gameLog&season=${season}&sportId=1&group=${group}`);
+  if(!r.ok) throw new Error("Could not fetch MLB stats.");
+  const d = await r.json();
+  const splits = d.stats?.[0]?.splits||[];
+  return splits.map(s=>({
+    stat:s.stat,
+    _date:s.date,
+    _opp:s.opponent?.name||s.opponent?.abbreviation||""
+  })).reverse();
+}
+
+async function searchNHL(q) {
+  const r = await fetch(`https://search.d3.nhle.com/api/v1/search?q=${encodeURIComponent(q)}&type=player&active=true`);
+  if(!r.ok) throw new Error("NHL API error.");
+  const d = await r.json();
+  return d.slice(0,10).map(p=>({id:p.playerId,name:p.name,sub:`${p.positionCode||""} · ${p.teamAbbrev||""}`.trim()}));
+}
+
+async function fetchNHLLog(playerId) {
+  const r = await fetch(`https://api-web.nhle.com/v1/player/${playerId}/game-log/now`);
+  if(!r.ok) throw new Error("Could not fetch NHL stats.");
+  const d = await r.json();
+  return (d.gameLog||[]).map(g=>({...g, _date:g.gameDate, _opp:g.opponentAbbrev||""}));
+}
+
+// ── Calc helpers ──────────────────────────────────────────────────────────────
+function hitRate(games, valFn, line, ou) {
+  const vals = games.map(valFn).filter(v=>v!=null&&!isNaN(v));
+  if(!vals.length) return null;
+  const hits = vals.filter(v=>ou==="over"?v>line:v<line).length;
+  const avg  = vals.reduce((a,b)=>a+b,0)/vals.length;
+  return {rate:Math.round(hits/vals.length*100), hits, total:vals.length, avg:Math.round(avg*10)/10};
+}
+
+function rateColor(r){ return r>=65?"#00dc6e":r>=50?"#ffc800":"#ff6b6b"; }
+function rateCls(r)  { return r>=65?"rate-hot":r>=50?"rate-mid":"rate-cold"; }
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+function HitRateChecker() {
+  const [sport,setSport]       = useState("NBA");
+  const [query,setQuery]       = useState("");
+  const [results,setResults]   = useState([]);
+  const [player,setPlayer]     = useState(null);
+  const [statIdx,setStatIdx]   = useState(0);
+  const [mlbGrp,setMlbGrp]    = useState("hitting");
+  const [line,setLine]         = useState("");
+  const [ou,setOu]             = useState("over");
+  const [h2hOpp,setH2hOpp]    = useState("");
+  const [loading,setLoading]   = useState(false);
+  const [searching,setSearch]  = useState(false);
+  const [error,setError]       = useState("");
+  const [gameLog,setGameLog]   = useState([]);
+  const [showDrop,setShowDrop] = useState(false);
+  const timer = useRef(null);
+  const wrap  = useRef(null);
+
+  const statList = sport==="NBA"?NBA_STATS:sport==="NHL"?NHL_STATS:mlbGrp==="hitting"?MLB_HIT:MLB_PIT;
+
+  useEffect(()=>{ setQuery("");setResults([]);setPlayer(null);setStatIdx(0);setLine("");setGameLog([]);setError("");setH2hOpp(""); },[sport]);
+  useEffect(()=>{ setStatIdx(0); },[mlbGrp]);
+  useEffect(()=>{ const h=e=>{if(wrap.current&&!wrap.current.contains(e.target))setShowDrop(false);}; document.addEventListener("mousedown",h); return()=>document.removeEventListener("mousedown",h); },[]);
+
+  const handleQuery = v => {
+    setQuery(v); setPlayer(null); setGameLog([]); setError("");
+    clearTimeout(timer.current);
+    if(v.length<2){setResults([]);setShowDrop(false);return;}
+    timer.current = setTimeout(async()=>{
+      setSearch(true);
+      try {
+        let res=[];
+        if(sport==="NBA") res=await searchNBA(v);
+        else if(sport==="MLB") res=await searchMLB(v);
+        else res=await searchNHL(v);
+        setResults(res); setShowDrop(true);
+      } catch(e){setError(e.message);}
+      finally{setSearch(false);}
+    },450);
+  };
+
+  const selectPlayer = p => { setPlayer(p);setQuery(p.name);setShowDrop(false);setResults([]);setGameLog([]);setError(""); };
+
+  const checkHistory = async() => {
+    if(!player||!line) return;
+    setLoading(true);setError("");setGameLog([]);
+    try {
+      let log=[];
+      if(sport==="NBA") log=await fetchNBALog(player.id);
+      else if(sport==="MLB") log=await fetchMLBLog(player.id,mlbGrp);
+      else log=await fetchNHLLog(player.id);
+      if(!log.length) throw new Error("No game data found for this player this season.");
+      setGameLog(log);
+    } catch(e){setError(e.message);}
+    finally{setLoading(false);}
+  };
+
+  const getVal = game => {
+    try { return sport==="MLB"?statList[statIdx].calc(game.stat):statList[statIdx].calc(game); }
+    catch{ return null; }
+  };
+
+  const lineNum  = parseFloat(line);
+  const hasData  = gameLog.length>0&&statList[statIdx]&&!isNaN(lineNum);
+
+  const l10Games     = hasData ? gameLog.slice(0,10) : [];
+  const seasonGames  = hasData ? gameLog : [];
+  const h2hGames     = hasData && h2hOpp.trim()
+    ? gameLog.filter(g=>(g._opp||"").toLowerCase().includes(h2hOpp.trim().toLowerCase()))
+    : [];
+
+  const l10Stats    = hasData ? hitRate(l10Games, getVal, lineNum, ou) : null;
+  const seasonStats = hasData ? hitRate(seasonGames, getVal, lineNum, ou) : null;
+  const h2hStats    = h2hGames.length ? hitRate(h2hGames, getVal, lineNum, ou) : null;
+
+  const displayGames = gameLog.slice(0,20);
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0a0d0f",backgroundImage:"radial-gradient(ellipse at 20% 0%, rgba(0,200,100,0.05) 0%, transparent 50%)",padding:"24px 16px",display:"flex",justifyContent:"center"}}>
+      <div style={{width:"100%",maxWidth:580}}>
+
+        {/* Header */}
+        <div style={{marginBottom:28,textAlign:"center"}}>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:26,fontWeight:800,color:"#fff",letterSpacing:"-0.5px"}}>
+            HIT RATE <span style={{color:"#00dc6e"}}>CHECKER</span>
+          </div>
+          <div style={{marginTop:8,fontSize:11,color:"rgba(255,255,255,0.3)",letterSpacing:"2px",textTransform:"uppercase"}}>
+            The +EV Cave · {getCurrentSeason("NBA")}-{(getCurrentSeason("NBA")+1).toString().slice(2)} Season · Auto-Updated
+          </div>
+        </div>
+
+        {/* Sport */}
+        <div className="card">
+          <div className="label-sm">SELECT SPORT</div>
+          <div style={{display:"flex"}}>
+            {["NBA","MLB","NHL"].map(s=>(
+              <button key={s} className={"sport-btn"+(sport===s?" active":"")} onClick={()=>setSport(s)}>{s}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* MLB hitter/pitcher */}
+        {sport==="MLB"&&(
+          <div className="card">
+            <div className="label-sm">PLAYER TYPE</div>
+            <div style={{display:"flex"}}>
+              <button className={"sport-btn"+(mlbGrp==="hitting"?" active":"")} onClick={()=>setMlbGrp("hitting")}>HITTER</button>
+              <button className={"sport-btn"+(mlbGrp==="pitching"?" active":"")} onClick={()=>setMlbGrp("pitching")}>PITCHER</button>
+            </div>
+          </div>
+        )}
+
+        {/* Player search */}
+        <div className="card">
+          <div className="label-sm">PLAYER SEARCH</div>
+          <div className="search-wrap" ref={wrap}>
+            <input className="tool-input" type="text" placeholder={`Search ${sport} player...`}
+              value={query} onChange={e=>handleQuery(e.target.value)} onFocus={()=>results.length&&setShowDrop(true)}/>
+            {searching&&<div style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)"}}>
+              <div className="spinner" style={{width:16,height:16,borderWidth:2}}/>
+            </div>}
+            {showDrop&&results.length>0&&(
+              <div className="dropdown">
+                {results.map(p=>(
+                  <div key={p.id} className="dropdown-item" onMouseDown={()=>selectPlayer(p)}>
+                    <div>{p.name}</div>
+                    {p.sub&&<div className="sub">{p.sub}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {player&&<div style={{marginTop:8,fontSize:11,color:"#00dc6e"}}>✓ {player.name}{player.sub?` · ${player.sub}`:""}</div>}
+        </div>
+
+        {/* Stat + Line */}
+        <div className="card">
+          <div className="label-sm">STAT CATEGORY</div>
+          <select className="stat-select" value={statIdx} onChange={e=>setStatIdx(parseInt(e.target.value))}>
+            {statList.map((s,i)=><option key={i} value={i}>{s.label}</option>)}
+          </select>
+        </div>
+
+        <div className="card">
+          <div className="label-sm">PROJECTION LINE</div>
+          <div style={{display:"flex",gap:10}}>
+            <input className="tool-input" type="number" step="0.5" placeholder="e.g. 13.5"
+              value={line} onChange={e=>setLine(e.target.value)} style={{flex:1}}/>
+            <div style={{display:"flex"}}>
+              <button className={"ou-btn ou-over"+(ou==="over"?" active":"")} onClick={()=>setOu("over")}>OVER</button>
+              <button className={"ou-btn ou-under"+(ou==="under"?" active":"")} onClick={()=>setOu("under")}>UNDER</button>
+            </div>
+          </div>
+        </div>
+
+        {/* H2H opponent input */}
+        <div className="card">
+          <div className="label-sm">H2H OPPONENT (OPTIONAL)</div>
+          <input className="tool-input" type="text"
+            placeholder="Type team name or abbreviation, e.g. Yankees or NYY"
+            value={h2hOpp} onChange={e=>setH2hOpp(e.target.value)}/>
+          <div style={{marginTop:6,fontSize:10,color:"rgba(255,255,255,0.25)"}}>
+            Leave blank to skip H2H. Fill in after results load to filter.
+          </div>
+        </div>
+
+        {error&&<div className="error-box">{error}</div>}
+
+        <button className="check-btn" onClick={checkHistory} disabled={!player||!line||isNaN(lineNum)||loading}>
+          {loading?"LOADING...":"CHECK HISTORY"}
+        </button>
+
+        {loading&&<div style={{textAlign:"center",padding:"30px 0"}}>
+          <div className="spinner"/>
+          <div style={{marginTop:12,fontSize:11,color:"rgba(255,255,255,0.3)"}}>Fetching {getCurrentSeason(sport)} season data...</div>
+        </div>}
+
+        {/* Results */}
+        {hasData&&!loading&&(
+          <>
+            {/* Three stat cards */}
+            <div className="card">
+              <div className="section-title">
+                {player.name} · {statList[statIdx].label} {ou==="over"?"Over":"Under"} {lineNum}
+              </div>
+              <div style={{display:"flex",gap:8,marginBottom:0}}>
+
+                {/* L10 */}
+                {l10Stats&&(
+                  <div className={`rate-card ${rateCls(l10Stats.rate)}`}>
+                    <div className="lbl">LAST 10</div>
+                    <div className="pct" style={{color:rateColor(l10Stats.rate)}}>{l10Stats.rate}%</div>
+                    <div className="frac">{l10Stats.hits}/{l10Stats.total}</div>
+                    <div className="avg">avg {l10Stats.avg}</div>
+                  </div>
+                )}
+
+                {/* Season */}
+                {seasonStats&&(
+                  <div className={`rate-card ${rateCls(seasonStats.rate)}`}>
+                    <div className="lbl">SEASON</div>
+                    <div className="pct" style={{color:rateColor(seasonStats.rate)}}>{seasonStats.rate}%</div>
+                    <div className="frac">{seasonStats.hits}/{seasonStats.total}</div>
+                    <div className="avg">avg {seasonStats.avg}</div>
+                  </div>
+                )}
+
+                {/* H2H */}
+                <div className={`rate-card ${h2hStats?rateCls(h2hStats.rate):"rate-grey"}`}>
+                  <div className="lbl">H2H</div>
+                  {h2hStats?(
+                    <>
+                      <div className="pct" style={{color:rateColor(h2hStats.rate)}}>{h2hStats.rate}%</div>
+                      <div className="frac">{h2hStats.hits}/{h2hStats.total}</div>
+                      <div className="avg">avg {h2hStats.avg}</div>
+                    </>
+                  ):(
+                    <div className="h2h-empty" style={{marginTop:8}}>
+                      {h2hOpp.trim()?"No games vs "+h2hOpp:"Enter opponent above"}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            </div>
+
+            {/* Game log */}
+            <div className="card">
+              <div className="section-title">Last {displayGames.length} Games</div>
+              {displayGames.map((game,i)=>{
+                const val  = getVal(game);
+                const hit  = val!=null&&!isNaN(val)&&(ou==="over"?val>lineNum:val<lineNum);
+                const date = (game._date||"").toString().slice(0,10);
+                const opp  = game._opp||"";
+                const isH2H = h2hOpp.trim()&&opp.toLowerCase().includes(h2hOpp.trim().toLowerCase());
+                return (
+                  <div key={i} className="game-row" style={isH2H?{background:"rgba(0,220,110,0.04)",borderRadius:2}:{}}>
+                    <div className={`hit-dot ${hit?"dot-hit":"dot-miss"}`}/>
+                    <div style={{flex:1,color:"rgba(255,255,255,0.45)",fontSize:11}}>
+                      {date}{opp?` vs ${opp}`:""}
+                      {isH2H&&<span style={{marginLeft:6,fontSize:9,color:"#00dc6e",fontWeight:700}}>H2H</span>}
+                    </div>
+                    <div style={{fontWeight:700,fontSize:13,color:hit?"#00dc6e":"#ff6b6b"}}>
+                      {val!=null&&!isNaN(val)?val:"—"}
+                    </div>
+                    <div style={{fontSize:10,color:"rgba(255,255,255,0.25)",width:36,textAlign:"right"}}>
+                      {val!=null&&!isNaN(val)?(hit?"HIT":"MISS"):""}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        <div style={{marginTop:12,textAlign:"center",fontSize:10,color:"rgba(255,255,255,0.15)",letterSpacing:"1px",paddingBottom:24}}>
+          THE +EV CAVE · PAID MEMBER TOOL · DATA AUTO-UPDATES EACH SEASON · NOT FINANCIAL ADVICE
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<HitRateChecker/>);
+</script>
+</body>
+</html>
