@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MLB Hit Rate Checker | The +EV Cave</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{background:#0a0d0f;font-family:'IBM Plex Mono',monospace;color:#fff;}
+    .card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:2px;padding:16px 20px;margin-bottom:12px;}
+    .label-sm{font-size:10px;color:rgba(255,255,255,0.3);letter-spacing:2px;margin-bottom:12px;}
+    .tool-input{width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:2px;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:13px;padding:12px 16px;outline:none;transition:all .15s;}
+    .tool-input:focus{border-color:rgba(0,220,110,0.5);background:rgba(0,220,110,0.04);}
+    .tool-input::placeholder{color:rgba(255,255,255,0.25);}
+    .stat-select{width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:2px;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:12px;padding:12px 16px;outline:none;cursor:pointer;appearance:none;}
+    .stat-select option{background:#141a1f;}
+    .dropdown{position:absolute;top:100%;left:0;right:0;z-index:100;background:#141a1f;border:1px solid rgba(0,220,110,0.25);border-top:none;border-radius:0 0 2px 2px;max-height:240px;overflow-y:auto;}
+    .dropdown-item{padding:10px 16px;cursor:pointer;font-size:12px;color:rgba(255,255,255,0.7);border-bottom:1px solid rgba(255,255,255,0.04);transition:background .1s;}
+    .dropdown-item:hover{background:rgba(0,220,110,0.1);color:#00dc6e;}
+    .dropdown-item .sub{font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px;}
+    .search-wrap{position:relative;}
+    .sport-btn{flex:1;padding:10px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:rgba(255,255,255,0.4);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;transition:all .15s;letter-spacing:1px;font-weight:600;}
+    .sport-btn:first-child{border-radius:2px 0 0 2px;}
+    .sport-btn:last-child{border-radius:0 2px 2px 0;border-left:none;}
+    .sport-btn.active{background:rgba(0,220,110,0.15);border-color:#00dc6e;color:#00dc6e;}
+    .ou-btn{flex:1;padding:9px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:rgba(255,255,255,0.4);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;transition:all .15s;font-weight:700;}
+    .ou-btn:first-child{border-radius:2px 0 0 2px;}
+    .ou-btn:last-child{border-radius:0 2px 2px 0;border-left:none;}
+    .ou-over.active{background:rgba(0,220,110,0.15);border-color:#00dc6e;color:#00dc6e;}
+    .ou-under.active{background:rgba(255,77,77,0.12);border-color:#ff4d4d;color:#ff6b6b;}
+    .check-btn{width:100%;padding:14px;background:#00dc6e;color:#0a0d0f;border:none;border-radius:2px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer;transition:all .15s;margin-bottom:12px;}
+    .check-btn:hover{background:#00f57a;}
+    .check-btn:disabled{background:rgba(0,220,110,0.25);cursor:not-allowed;color:rgba(0,0,0,0.4);}
+    .rate-card{flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:2px;padding:12px 8px;text-align:center;min-width:0;}
+    .rate-card .lbl{font-size:9px;color:rgba(255,255,255,0.3);letter-spacing:1.5px;margin-bottom:5px;}
+    .rate-card .pct{font-size:20px;font-family:'Syne',sans-serif;font-weight:800;}
+    .rate-card .frac{font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px;}
+    .rate-card .avg{font-size:10px;color:rgba(255,255,255,0.35);margin-top:3px;}
+    .rate-hot{border-color:rgba(0,220,110,0.4)!important;}
+    .rate-mid{border-color:rgba(255,200,0,0.35)!important;}
+    .rate-cold{border-color:rgba(255,77,77,0.35)!important;}
+    .rate-grey{border-color:rgba(255,255,255,0.1)!important;}
+    .rate-blue{border-color:rgba(80,140,255,0.4)!important;}
+    .game-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:11px;}
+    .game-row:last-child{border-bottom:none;}
+    .hit-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+    .dot-hit{background:#00dc6e;}
+    .dot-miss{background:#ff4d4d;}
+    .spinner{display:inline-block;width:24px;height:24px;border:2px solid rgba(0,220,110,0.2);border-top-color:#00dc6e;border-radius:50%;animation:spin .8s linear infinite;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .error-box{background:rgba(255,77,77,0.08);border:1px solid rgba(255,77,77,0.3);border-radius:2px;padding:12px 16px;font-size:11px;color:#ff6b6b;margin-bottom:12px;line-height:1.6;}
+    .debug-box{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:2px;padding:10px 16px;font-size:10px;color:rgba(255,255,255,0.3);margin-bottom:12px;}
+    .toggle-pill{padding:6px 12px;border:1px solid rgba(255,255,255,0.1);border-radius:20px;background:transparent;color:rgba(255,255,255,0.35);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;letter-spacing:1px;}
+    .toggle-pill.active{background:rgba(0,220,110,0.12);border-color:#00dc6e;color:#00dc6e;}
+    .sec-title{font-size:11px;color:rgba(255,255,255,0.5);font-weight:600;margin-bottom:10px;letter-spacing:.5px;}
+    .game-card{padding:10px 14px;border:1px solid rgba(255,255,255,0.07);border-radius:2px;cursor:pointer;transition:all .15s;margin-bottom:8px;background:rgba(255,255,255,0.02);}
+    .game-card:hover{border-color:rgba(0,220,110,0.3);background:rgba(0,220,110,0.04);}
+    .game-card.selected{border-color:#00dc6e;background:rgba(0,220,110,0.07);}
+    .game-card .teams{font-size:12px;font-weight:600;color:#fff;margin-bottom:4px;}
+    .game-card .pitcher{font-size:10px;color:rgba(255,255,255,0.4);}
+    .game-card .time{font-size:10px;color:rgba(255,255,255,0.3);}
+    .pill-tag{display:inline-block;padding:3px 8px;border-radius:20px;font-size:9px;font-weight:700;letter-spacing:1px;margin-left:6px;}
+    .tag-l{background:rgba(80,140,255,0.15);border:1px solid rgba(80,140,255,0.3);color:#80a8ff;}
+    .tag-r{background:rgba(255,120,0,0.12);border:1px solid rgba(255,120,0,0.3);color:#ff9955;}
+    .divider-line{height:1px;background:rgba(255,255,255,0.06);margin:14px 0;}
+    .stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:8px;}
+    .stat-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;}
+    .stat-grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px;}
+    .mini-stat{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:2px;padding:10px;text-align:center;}
+    .mini-stat .ml{font-size:9px;color:rgba(255,255,255,0.3);letter-spacing:1px;margin-bottom:4px;}
+    .mini-stat .mv{font-size:16px;font-weight:700;font-family:'Syne',sans-serif;}
+    .mini-stat .ms{font-size:9px;color:rgba(255,255,255,0.3);margin-top:2px;}
+    .vs-card{background:rgba(80,140,255,0.06);border:1px solid rgba(80,140,255,0.2);border-radius:2px;padding:14px 16px;margin-bottom:12px;}
+    .vs-card .vs-title{font-size:11px;color:#80a8ff;font-weight:600;margin-bottom:10px;letter-spacing:.5px;}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ── Stat definitions ──────────────────────────────────────────────────────────
+const HIT_STATS = [
+  {label:"Hits",               key:"hits",          calc:s=>s.hits},
+  {label:"Total Bases",        key:"totalBases",     calc:s=>{const sg=(s.hits||0)-(s.doubles||0)-(s.triples||0)-(s.homeRuns||0);return sg+2*(s.doubles||0)+3*(s.triples||0)+4*(s.homeRuns||0);}},
+  {label:"Home Runs",          key:"homeRuns",       calc:s=>s.homeRuns},
+  {label:"RBIs",               key:"rbi",            calc:s=>s.rbi},
+  {label:"Runs",               key:"runs",           calc:s=>s.runs},
+  {label:"Stolen Bases",       key:"stolenBases",    calc:s=>s.stolenBases},
+  {label:"Strikeouts (Batter)",key:"strikeOuts",     calc:s=>s.strikeOuts},
+  {label:"Walks",              key:"baseOnBalls",    calc:s=>s.baseOnBalls},
+  {label:"Hits + Runs + RBIs", key:"hrr",            calc:s=>(s.hits||0)+(s.runs||0)+(s.rbi||0)},
+  {label:"At Bats",            key:"atBats",         calc:s=>s.atBats},
+];
+
+const PIT_STATS = [
+  {label:"Strikeouts",         key:"strikeOuts",     calc:s=>s.strikeOuts},
+  {label:"Hits Allowed",       key:"hits",           calc:s=>s.hits},
+  {label:"Earned Runs",        key:"earnedRuns",     calc:s=>s.earnedRuns},
+  {label:"Walks Allowed",      key:"baseOnBalls",    calc:s=>s.baseOnBalls},
+  {label:"Outs Recorded",      key:"outs",           calc:s=>{const p=(s.inningsPitched||"0").toString().split(".");return parseInt(p[0])*3+(parseInt(p[1])||0);}},
+  {label:"Pitches Thrown",     key:"pitchesThrown",  calc:s=>s.pitchesThrown},
+];
+
+// ── MLB API helpers ───────────────────────────────────────────────────────────
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function currentSeason() {
+  return new Date().getFullYear();
+}
+
+async function mlbFetch(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`MLB API error (${r.status})`);
+  return r.json();
+}
+
+async function searchMLBPlayer(q) {
+  const d = await mlbFetch(`https://statsapi.mlb.com/api/v1/people/search?names=${encodeURIComponent(q)}&sportId=1&active=true`);
+  return (d.people||[]).slice(0,10).map(p=>({
+    id:p.id, name:p.fullName,
+    hand: p.batSide?.code||"",
+    pitchHand: p.pitchHand?.code||"",
+    pos: p.primaryPosition?.abbreviation||"",
+    sub:`${p.primaryPosition?.abbreviation||""} · ${p.currentTeam?.name||""}`.trim()
+  }));
+}
+
+async function fetchPlayerInfo(id) {
+  const d = await mlbFetch(`https://statsapi.mlb.com/api/v1/people/${id}?hydrate=currentTeam`);
+  const p = d.people?.[0]||{};
+  return {
+    id, name:p.fullName,
+    pitchHand: p.pitchHand?.code||"",
+    batSide: p.batSide?.code||"",
+    pos: p.primaryPosition?.abbreviation||"",
+    team: p.currentTeam?.name||""
+  };
+}
+
+async function fetchTodaysGames() {
+  const today = todayStr();
+  const d = await mlbFetch(
+    `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${today}&gameType=R&hydrate=probablePitcher,team`
+  );
+  const games = [];
+  (d.dates||[]).forEach(date => {
+    (date.games||[]).forEach(g => {
+      const awayP = g.teams?.away?.probablePitcher;
+      const homeP = g.teams?.home?.probablePitcher;
+      games.push({
+        id: g.gamePk,
+        away: g.teams?.away?.team?.name||"",
+        awayAbbr: g.teams?.away?.team?.abbreviation||"",
+        home: g.teams?.home?.team?.name||"",
+        homeAbbr: g.teams?.home?.team?.abbreviation||"",
+        time: g.gameDate,
+        awayPitcher: awayP ? { id:awayP.id, name:awayP.fullName } : null,
+        homePitcher: homeP ? { id:homeP.id, name:homeP.fullName } : null,
+      });
+    });
+  });
+  return games;
+}
+
+async function fetchGameLog(playerId, group, seasons) {
+  let all = [];
+  for (const season of seasons) {
+    try {
+      const d = await mlbFetch(
+        `https://statsapi.mlb.com/api/v1/people/${playerId}/stats?stats=gameLog&season=${season}&sportId=1&group=${group}`
+      );
+      const splits = d.stats?.[0]?.splits||[];
+      splits.forEach(s => {
+        all.push({
+          stat:s.stat,
+          _date:s.date,
+          _opp:s.opponent?.name||s.opponent?.abbreviation||"",
+          _isHome:s.isHome,
+          _season:season,
+        });
+      });
+    } catch(e) { continue; }
+  }
+  return all.reverse();
+}
+
+async function fetchVsPitcher(batterId, pitcherId) {
+  try {
+    const d = await mlbFetch(
+      `https://statsapi.mlb.com/api/v1/people/${batterId}/stats?stats=vsPlayer&opposingPlayerId=${pitcherId}&group=hitting&sportId=1`
+    );
+    const stats = d.stats?.[0]?.splits?.[0]?.stat;
+    const total = d.stats?.[0]?.splits?.[0]?.stat?.plateAppearances || 
+                  d.stats?.[0]?.splits?.[0]?.stat?.atBats || 0;
+    return stats ? { stat: stats, pa: total } : null;
+  } catch(e) { return null; }
+}
+
+async function fetchHandSplits(playerId, group, season) {
+  try {
+    const d = await mlbFetch(
+      `https://statsapi.mlb.com/api/v1/people/${playerId}/stats?stats=statSplits&season=${season}&group=${group}&sitCodes=vl,vr&sportId=1`
+    );
+    const splits = d.stats?.[0]?.splits||[];
+    const vsL = splits.find(s=>s.split?.code==="vl");
+    const vsR = splits.find(s=>s.split?.code==="vr");
+    return { vsL: vsL?.stat||null, vsR: vsR?.stat||null };
+  } catch(e) { return { vsL:null, vsR:null }; }
+}
+
+async function fetchSeasonSplits(playerId, group, season) {
+  // Home/away splits
+  try {
+    const d = await mlbFetch(
+      `https://statsapi.mlb.com/api/v1/people/${playerId}/stats?stats=statSplits&season=${season}&group=${group}&sitCodes=h,a&sportId=1`
+    );
+    const splits = d.stats?.[0]?.splits||[];
+    const home = splits.find(s=>s.split?.code==="h");
+    const away = splits.find(s=>s.split?.code==="a");
+    return { home: home?.stat||null, away: away?.stat||null };
+  } catch(e) { return { home:null, away:null }; }
+}
+
+// ── Calc helpers ──────────────────────────────────────────────────────────────
+function hitRate(games, valFn, line, ou) {
+  const vals = games.map(valFn).filter(v=>v!=null&&!isNaN(v));
+  if (!vals.length) return null;
+  const hits = vals.filter(v=>ou==="over"?v>line:v<line).length;
+  const avg  = vals.reduce((a,b)=>a+b,0)/vals.length;
+  return { rate:Math.round(hits/vals.length*100), hits, total:vals.length, avg:Math.round(avg*10)/10 };
+}
+
+function rateColor(r){ return r>=65?"#00dc6e":r>=50?"#ffc800":"#ff6b6b"; }
+function rateCls(r)  { return r>=65?"rate-hot":r>=50?"rate-mid":"rate-cold"; }
+
+function RateCard({label, data, empty, colorClass}) {
+  const cls = colorClass || (data ? rateCls(data.rate) : "rate-grey");
+  return (
+    <div className={`rate-card ${cls}`}>
+      <div className="lbl">{label}</div>
+      {data ? <>
+        <div className="pct" style={{color: colorClass ? "#80a8ff" : rateColor(data.rate)}}>{data.rate}%</div>
+        <div className="frac">{data.hits}/{data.total}</div>
+        <div className="avg">avg {data.avg}</div>
+      </> : <div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>{empty||"—"}</div>}
+    </div>
+  );
+}
+
+function StatBox({label, value, sub, color}) {
+  return (
+    <div className="mini-stat">
+      <div className="ml">{label}</div>
+      <div className="mv" style={{color: color||"#fff"}}>{value!=null?value:"—"}</div>
+      {sub && <div className="ms">{sub}</div>}
+    </div>
+  );
+}
+
+function formatTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",timeZoneName:"short"});
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+function MLBChecker() {
+  // Batter
+  const [bQuery, setBQuery]       = useState("");
+  const [bResults, setBResults]   = useState([]);
+  const [batter, setBatter]       = useState(null);
+  const [bSearching, setBSearch]  = useState(false);
+  const [showBDrop, setShowBDrop] = useState(false);
+  // Pitcher search
+  const [pQuery, setPQuery]       = useState("");
+  const [pResults, setPResults]   = useState([]);
+  const [pitcher, setPitcher]     = useState(null);
+  const [pSearching, setPSearch]  = useState(false);
+  const [showPDrop, setShowPDrop] = useState(false);
+  // Today's games
+  const [todayGames, setTodayGames] = useState([]);
+  const [gamesLoading, setGLoading] = useState(false);
+  const [selectedGame, setSelectedGame] = useState(null);
+  const [showGames, setShowGames]   = useState(false);
+  // Settings
+  const [group, setGroup]         = useState("hitting");
+  const [statIdx, setStatIdx]     = useState(0);
+  const [line, setLine]           = useState("");
+  const [ou, setOu]               = useState("over");
+  const [scope, setScope]         = useState("season");
+  const [h2hInput, setH2hInput]   = useState("");
+  const [h2hActive, setH2hActive] = useState("");
+  // Results
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState("");
+  const [debug, setDebug]         = useState("");
+  const [gameLog, setGameLog]     = useState([]);
+  const [vsPitcher, setVsPitcher] = useState(null);
+  const [handSplits, setHandSplits] = useState(null);
+  const [homeSplits, setHomeSplits] = useState(null);
+  const [pitcherInfo, setPitcherInfo] = useState(null);
+
+  const statList = group==="hitting" ? HIT_STATS : PIT_STATS;
+  const bWrap = useRef(null), pWrap = useRef(null);
+  const bTimer = useRef(null), pTimer = useRef(null);
+
+  // Close dropdowns on outside click
+  useEffect(()=>{
+    const h=e=>{
+      if(bWrap.current&&!bWrap.current.contains(e.target)) setShowBDrop(false);
+      if(pWrap.current&&!pWrap.current.contains(e.target)) setShowPDrop(false);
+    };
+    document.addEventListener("mousedown",h);
+    return()=>document.removeEventListener("mousedown",h);
+  },[]);
+
+  // Load today's games on mount
+  useEffect(()=>{
+    setGLoading(true);
+    fetchTodaysGames()
+      .then(g=>setTodayGames(g))
+      .catch(()=>{})
+      .finally(()=>setGLoading(false));
+  },[]);
+
+  // Batter search
+  const handleBQuery = v => {
+    setBQuery(v); setBatter(null); setGameLog([]); setError("");
+    clearTimeout(bTimer.current);
+    if(v.length<2){setBResults([]);setShowBDrop(false);return;}
+    bTimer.current = setTimeout(async()=>{
+      setBSearch(true);
+      try { const r=await searchMLBPlayer(v); setBResults(r); setShowBDrop(true); }
+      catch(e){ setError(e.message); }
+      finally{ setBSearch(false); }
+    },400);
+  };
+
+  const selectBatter = async p => {
+    setBatter(p); setBQuery(p.name); setShowBDrop(false); setBResults([]);
+    setGameLog([]); setError(""); setVsPitcher(null); setHandSplits(null); setHomeSplits(null);
+  };
+
+  // Pitcher search
+  const handlePQuery = v => {
+    setPQuery(v); setPitcher(null); setVsPitcher(null);
+    clearTimeout(pTimer.current);
+    if(v.length<2){setPResults([]);setShowPDrop(false);return;}
+    pTimer.current = setTimeout(async()=>{
+      setPSearch(true);
+      try { const r=await searchMLBPlayer(v); setPResults(r); setShowPDrop(true); }
+      catch(e){}
+      finally{ setPSearch(false); }
+    },400);
+  };
+
+  const selectPitcher = async p => {
+    setPitcher(p); setPQuery(p.name); setShowPDrop(false); setPResults([]);
+    setVsPitcher(null);
+    // Get pitcher hand
+    try { const info=await fetchPlayerInfo(p.id); setPitcherInfo(info); } catch(e){}
+  };
+
+  // Select game from today's schedule
+  const selectGame = (game, side) => {
+    setSelectedGame({game,side});
+    const p = side==="away" ? game.homePitcher : game.awayPitcher;
+    if (p) {
+      setPitcher(p); setPQuery(p.name);
+      fetchPlayerInfo(p.id).then(info=>setPitcherInfo(info)).catch(()=>{});
+    }
+    setShowGames(false);
+  };
+
+  // Main fetch
+  const checkHistory = async() => {
+    if (!batter||!line||isNaN(parseFloat(line))) return;
+    setLoading(true); setError(""); setDebug(""); setGameLog([]);
+    setVsPitcher(null); setHandSplits(null); setHomeSplits(null);
+    const lineNum = parseFloat(line);
+    const season  = currentSeason();
+    const seasons = scope==="lifetime" ? [season,season-1,season-2] : [season];
+
+    try {
+      setDebug("Fetching game log...");
+      const log = await fetchGameLog(batter.id, group, seasons);
+      if (!log.length) throw new Error(`No ${season} season data found. Season may not have started yet.`);
+      setGameLog(log);
+      setDebug(`Loaded ${log.length} games. Fetching splits...`);
+
+      // Fetch all splits in parallel
+      const [hands, homes] = await Promise.all([
+        fetchHandSplits(batter.id, group, season),
+        fetchSeasonSplits(batter.id, group, season),
+      ]);
+      setHandSplits(hands);
+      setHomeSplits(homes);
+
+      // Batter vs pitcher
+      if (pitcher && group==="hitting") {
+        const vsp = await fetchVsPitcher(batter.id, pitcher.id);
+        setVsPitcher(vsp);
+      }
+
+      setDebug(`Done. ${log.length} games loaded.`);
+    } catch(e) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+
+  const lineNum = parseFloat(line);
+  const hasData = gameLog.length>0 && statList[statIdx] && !isNaN(lineNum);
+  const getVal  = g => { try { return statList[statIdx].calc(g.stat); } catch{ return null; } };
+
+  const l5Stats     = hasData ? hitRate(gameLog.slice(0,5),  getVal, lineNum, ou) : null;
+  const l10Stats    = hasData ? hitRate(gameLog.slice(0,10), getVal, lineNum, ou) : null;
+  const seasonStats = hasData ? hitRate(gameLog,             getVal, lineNum, ou) : null;
+  const h2hGames    = hasData&&h2hActive ? gameLog.filter(g=>(g._opp||"").toLowerCase().includes(h2hActive.toLowerCase())) : [];
+  const h2hStats    = h2hGames.length ? hitRate(h2hGames, getVal, lineNum, ou) : null;
+  const homeGames   = hasData ? gameLog.filter(g=>g._isHome) : [];
+  const awayGames   = hasData ? gameLog.filter(g=>!g._isHome) : [];
+  const homeStats   = homeGames.length ? hitRate(homeGames, getVal, lineNum, ou) : null;
+  const awayStats   = awayGames.length ? hitRate(awayGames, getVal, lineNum, ou) : null;
+
+  // vs pitcher hit rate from game log (not career — game-by-game vs that team)
+  const vsPitcherStatKey = statList[statIdx]?.key;
+  const vsPitcherVal = vsPitcher?.stat ? statList[statIdx]?.calc(vsPitcher.stat) : null;
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0a0d0f",backgroundImage:"radial-gradient(ellipse at 20% 0%,rgba(0,200,100,0.05) 0%,transparent 50%)",padding:"24px 16px",display:"flex",justifyContent:"center"}}>
+      <div style={{width:"100%",maxWidth:600}}>
+
+        {/* Header */}
+        <div style={{marginBottom:24,textAlign:"center"}}>
+          <div style={{fontFamily:"'Syne',sans-serif",fontSize:24,fontWeight:800,letterSpacing:"-0.5px"}}>
+            MLB <span style={{color:"#00dc6e"}}>HIT RATE</span> CHECKER
+          </div>
+          <div style={{marginTop:6,fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:"2px",textTransform:"uppercase"}}>
+            The +EV Cave · Ultimate Prop Research Tool · {currentSeason()} Season
+          </div>
+        </div>
+
+        {/* Player type */}
+        <div className="card">
+          <div className="label-sm">PLAYER TYPE</div>
+          <div style={{display:"flex"}}>
+            <button className={"sport-btn"+(group==="hitting"?" active":"")} onClick={()=>{setGroup("hitting");setStatIdx(0);setGameLog([]);}}>BATTER</button>
+            <button className={"sport-btn"+(group==="pitching"?" active":"")} onClick={()=>{setGroup("pitching");setStatIdx(0);setGameLog([]);setPitcher(null);setPQuery("");}}>PITCHER</button>
+          </div>
+        </div>
+
+        {/* Data scope */}
+        <div className="card">
+          <div className="label-sm">DATA RANGE</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {[["season","CURRENT SEASON"],["lifetime","LAST 3 SEASONS"]].map(([v,l])=>(
+              <button key={v} className={"toggle-pill"+(scope===v?" active":"")} onClick={()=>setScope(v)}>{l}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Today's games */}
+        <div className="card">
+          <div className="label-sm">TODAY'S MATCHUPS — {todayStr()}</div>
+          <button className={"sport-btn"+(showGames?" active":"")} style={{width:"100%",borderRadius:2,marginBottom:showGames?10:0}}
+            onClick={()=>setShowGames(!showGames)}>
+            {gamesLoading?"LOADING GAMES...":(showGames?"HIDE MATCHUPS":"SHOW TODAY'S MATCHUPS")}
+          </button>
+
+          {showGames && !gamesLoading && (
+            todayGames.length===0
+              ? <div style={{fontSize:11,color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"10px 0"}}>No games today or schedule not available yet.</div>
+              : <div style={{marginTop:2}}>
+                  <div style={{fontSize:10,color:"rgba(255,255,255,0.3)",marginBottom:8}}>Click a team to set them as the batter's team and auto-fill the opposing pitcher</div>
+                  {todayGames.map(game=>(
+                    <div key={game.id} className="game-card">
+                      <div className="teams" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <span>{game.awayAbbr} @ {game.homeAbbr}</span>
+                        <span className="time">{formatTime(game.time)}</span>
+                      </div>
+                      <div className="pitcher" style={{marginTop:4,display:"flex",gap:12}}>
+                        <span
+                          style={{cursor:"pointer",color:selectedGame?.game?.id===game.id&&selectedGame?.side==="away"?"#00dc6e":"rgba(255,255,255,0.5)",textDecoration:"underline"}}
+                          onClick={()=>selectGame(game,"away")}>
+                          {game.awayAbbr} batting → {game.homePitcher?game.homePitcher.name:"TBD"}
+                        </span>
+                        <span
+                          style={{cursor:"pointer",color:selectedGame?.game?.id===game.id&&selectedGame?.side==="home"?"#00dc6e":"rgba(255,255,255,0.5)",textDecoration:"underline"}}
+                          onClick={()=>selectGame(game,"home")}>
+                          {game.homeAbbr} batting → {game.awayPitcher?game.awayPitcher.name:"TBD"}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+          )}
+        </div>
+
+        {/* Batter search */}
+        <div className="card">
+          <div className="label-sm">{group==="hitting"?"BATTER":"PITCHER"} SEARCH</div>
+          <div className="search-wrap" ref={bWrap}>
+            <input className="tool-input" type="text"
+              placeholder={`Search MLB ${group==="hitting"?"batter":"pitcher"}...`}
+              value={bQuery} onChange={e=>handleBQuery(e.target.value)}
+              onFocus={()=>bResults.length&&setShowBDrop(true)}/>
+            {bSearching&&<div style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)"}}>
+              <div className="spinner" style={{width:16,height:16,borderWidth:2}}/>
+            </div>}
+            {showBDrop&&bResults.length>0&&(
+              <div className="dropdown">
+                {bResults.map(p=>(
+                  <div key={p.id} className="dropdown-item" onMouseDown={()=>selectBatter(p)}>
+                    <div>{p.name}</div>
+                    {p.sub&&<div className="sub">{p.sub}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {batter&&(
+            <div style={{marginTop:8,fontSize:11,color:"#00dc6e"}}>
+              ✓ {batter.name}
+              {batter.sub&&<span style={{color:"rgba(255,255,255,0.4)"}}> · {batter.sub}</span>}
+            </div>
+          )}
+        </div>
+
+        {/* Opposing pitcher — only for batters */}
+        {group==="hitting"&&(
+          <div className="card">
+            <div className="label-sm">OPPOSING PITCHER (FOR BVP DATA)</div>
+            <div className="search-wrap" ref={pWrap}>
+              <input className="tool-input" type="text"
+                placeholder="Search opposing pitcher... (optional)"
+                value={pQuery} onChange={e=>handlePQuery(e.target.value)}
+                onFocus={()=>pResults.length&&setShowPDrop(true)}/>
+              {pSearching&&<div style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)"}}>
+                <div className="spinner" style={{width:16,height:16,borderWidth:2}}/>
+              </div>}
+              {showPDrop&&pResults.length>0&&(
+                <div className="dropdown">
+                  {pResults.map(p=>(
+                    <div key={p.id} className="dropdown-item" onMouseDown={()=>selectPitcher(p)}>
+                      <div>{p.name}</div>
+                      {p.sub&&<div className="sub">{p.sub}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {pitcher&&(
+              <div style={{marginTop:8,fontSize:11,color:"#00dc6e"}}>
+                ✓ {pitcher.name}
+                {pitcherInfo?.pitchHand&&(
+                  <span className={`pill-tag ${pitcherInfo.pitchHand==="L"?"tag-l":"tag-r"}`}>
+                    {pitcherInfo.pitchHand}HP
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Stat + line */}
+        <div className="card">
+          <div className="label-sm">STAT CATEGORY</div>
+          <select className="stat-select" value={statIdx} onChange={e=>setStatIdx(parseInt(e.target.value))}>
+            {statList.map((s,i)=><option key={i} value={i}>{s.label}</option>)}
+          </select>
+        </div>
+
+        <div className="card">
+          <div className="label-sm">PROJECTION LINE</div>
+          <div style={{display:"flex",gap:10}}>
+            <input className="tool-input" type="number" step="0.5" placeholder="e.g. 0.5"
+              value={line} onChange={e=>setLine(e.target.value)} style={{flex:1}}/>
+            <div style={{display:"flex"}}>
+              <button className={"ou-btn ou-over"+(ou==="over"?" active":"")} onClick={()=>setOu("over")}>OVER</button>
+              <button className={"ou-btn ou-under"+(ou==="under"?" active":"")} onClick={()=>setOu("under")}>UNDER</button>
+            </div>
+          </div>
+        </div>
+
+        {error&&<div className="error-box">{error}</div>}
+        {!error&&debug&&<div className="debug-box">{debug}</div>}
+
+        <button className="check-btn" onClick={checkHistory}
+          disabled={!batter||!line||isNaN(lineNum)||loading}>
+          {loading?"FETCHING DATA...":"CHECK HISTORY"}
+        </button>
+
+        {loading&&<div style={{textAlign:"center",padding:"24px 0"}}>
+          <div className="spinner"/>
+          <div style={{marginTop:10,fontSize:11,color:"rgba(255,255,255,0.3)"}}>
+            Fetching {scope==="lifetime"?"3 seasons":"current season"} + splits...
+          </div>
+        </div>}
+
+        {/* ── RESULTS ── */}
+        {hasData&&!loading&&(
+          <>
+            {/* Hit rate cards */}
+            <div className="card">
+              <div className="sec-title">
+                {batter.name} · {statList[statIdx].label} {ou==="over"?"Over":"Under"} {lineNum}
+                <span style={{marginLeft:8,fontSize:10,color:"rgba(255,255,255,0.3)",fontWeight:400}}>
+                  ({gameLog.length} games)
+                </span>
+              </div>
+              <div style={{display:"flex",gap:6,marginBottom:8}}>
+                <RateCard label="L5"     data={l5Stats}/>
+                <RateCard label="L10"    data={l10Stats}/>
+                <RateCard label={scope==="lifetime"?"3 SEASONS":"SEASON"} data={seasonStats}/>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <RateCard label="HOME"   data={homeStats} empty="No home games"/>
+                <RateCard label="AWAY"   data={awayStats} empty="No away games"/>
+                <RateCard label={"H2H"+(h2hActive?` ${h2hActive.toUpperCase()}`:"")}
+                  data={h2hStats} empty={h2hActive?"No games":"Set below"}/>
+              </div>
+            </div>
+
+            {/* vs LHP / RHP splits */}
+            {group==="hitting"&&handSplits&&(handSplits.vsL||handSplits.vsR)&&(
+              <div className="card">
+                <div className="sec-title">HANDEDNESS SPLITS · {currentSeason()} Season</div>
+                <div style={{display:"flex",gap:8}}>
+                  <div className="rate-card rate-blue" style={{flex:1}}>
+                    <div className="lbl">VS LHP</div>
+                    {handSplits.vsL ? <>
+                      <div className="pct" style={{color:"#80a8ff",fontSize:16}}>
+                        {handSplits.vsL.avg||handSplits.vsL.battingAverage||"—"}
+                      </div>
+                      <div className="frac">{handSplits.vsL.atBats||0} AB</div>
+                      <div className="avg">{handSplits.vsL.homeRuns||0} HR · {handSplits.vsL.strikeOuts||0} K</div>
+                    </> : <div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}
+                  </div>
+                  <div className="rate-card rate-blue" style={{flex:1}}>
+                    <div className="lbl">VS RHP</div>
+                    {handSplits.vsR ? <>
+                      <div className="pct" style={{color:"#80a8ff",fontSize:16}}>
+                        {handSplits.vsR.avg||handSplits.vsR.battingAverage||"—"}
+                      </div>
+                      <div className="frac">{handSplits.vsR.atBats||0} AB</div>
+                      <div className="avg">{handSplits.vsR.homeRuns||0} HR · {handSplits.vsR.strikeOuts||0} K</div>
+                    </> : <div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Batter vs Pitcher */}
+            {group==="hitting"&&pitcher&&(
+              <div className="vs-card">
+                <div className="vs-title">
+                  BATTER VS PITCHER · {batter.name} vs {pitcher.name}
+                  {pitcherInfo?.pitchHand&&(
+                    <span className={`pill-tag ${pitcherInfo.pitchHand==="L"?"tag-l":"tag-r"}`}>
+                      {pitcherInfo.pitchHand}HP
+                    </span>
+                  )}
+                </div>
+                {vsPitcher ? (
+                  <div className="stat-grid-4">
+                    <StatBox label="AVG"  value={vsPitcher.stat.avg||vsPitcher.stat.battingAverage||"—"} color="#80a8ff"/>
+                    <StatBox label="AB"   value={vsPitcher.stat.atBats} color="#80a8ff"/>
+                    <StatBox label="HITS" value={vsPitcher.stat.hits} color="#80a8ff"/>
+                    <StatBox label="HR"   value={vsPitcher.stat.homeRuns} color="#80a8ff"/>
+                    <StatBox label="RBI"  value={vsPitcher.stat.rbi} color="#80a8ff"/>
+                    <StatBox label="BB"   value={vsPitcher.stat.baseOnBalls} color="#80a8ff"/>
+                    <StatBox label="K"    value={vsPitcher.stat.strikeOuts} color="#80a8ff"/>
+                    <StatBox label="OPS"  value={vsPitcher.stat.ops||"—"} color="#80a8ff"/>
+                  </div>
+                ) : (
+                  <div style={{fontSize:11,color:"rgba(255,255,255,0.3)"}}>
+                    {loading?"Loading BVP data...":"No career BVP data found between these two players."}
+                  </div>
+                )}
+                {vsPitcherVal!=null&&(
+                  <div style={{marginTop:10,fontSize:11,color:"rgba(255,255,255,0.5)"}}>
+                    Career {statList[statIdx].label} vs {pitcher.name}:
+                    <span style={{marginLeft:6,fontWeight:700,color: vsPitcherVal>lineNum?"#00dc6e":"#ff6b6b"}}>
+                      {vsPitcherVal}
+                    </span>
+                    <span style={{marginLeft:6,fontSize:10,color:vsPitcherVal>lineNum?"#00dc6e":"#ff6b6b"}}>
+                      ({vsPitcherVal>lineNum?"OVER":"UNDER"} {lineNum})
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* H2H filter */}
+            <div className="card">
+              <div className="label-sm">H2H OPPONENT FILTER</div>
+              <div style={{display:"flex",gap:8}}>
+                <input className="tool-input" type="text"
+                  placeholder="Team name or abbreviation, e.g. Yankees or NYY"
+                  value={h2hInput} onChange={e=>setH2hInput(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&setH2hActive(h2hInput.trim())}
+                  style={{flex:1}}/>
+                <button className="sport-btn active" style={{flex:"0 0 auto",borderRadius:2,padding:"0 16px"}}
+                  onClick={()=>setH2hActive(h2hInput.trim())}>APPLY</button>
+                {h2hActive&&<button className="sport-btn" style={{flex:"0 0 auto",borderRadius:2,padding:"0 12px",color:"#ff6b6b",borderColor:"rgba(255,77,77,0.3)"}}
+                  onClick={()=>{setH2hActive("");setH2hInput("");}}>CLEAR</button>}
+              </div>
+              {h2hActive&&<div style={{marginTop:8,fontSize:11,color:h2hGames.length?"#00dc6e":"rgba(255,77,77,0.7)"}}>
+                {h2hGames.length?`${h2hGames.length} games vs "${h2hActive}"`:`No games found vs "${h2hActive}"`}
+              </div>}
+            </div>
+
+            {/* Game log */}
+            <div className="card">
+              <div className="sec-title">Game Log (last {Math.min(gameLog.length,30)})</div>
+              {gameLog.slice(0,30).map((game,i)=>{
+                const val   = getVal(game);
+                const hit   = val!=null&&!isNaN(val)&&(ou==="over"?val>lineNum:val<lineNum);
+                const isH2H = h2hActive&&(game._opp||"").toLowerCase().includes(h2hActive.toLowerCase());
+                return (
+                  <div key={i} className="game-row"
+                    style={isH2H?{background:"rgba(0,220,110,0.04)",borderRadius:2,paddingLeft:4,paddingRight:4}:{}}>
+                    <div className={`hit-dot ${val!=null&&!isNaN(val)?(hit?"dot-hit":"dot-miss"):"dot-miss"}`} style={{opacity:val!=null?1:0.3}}/>
+                    <div style={{flex:1,color:"rgba(255,255,255,0.4)",fontSize:11}}>
+                      {(game._date||"").slice(0,10)}
+                      {game._opp?` vs ${game._opp}`:""}
+                      {game._isHome!==undefined&&<span style={{marginLeft:4,fontSize:9,color:"rgba(255,255,255,0.2)"}}>{game._isHome?"H":"A"}</span>}
+                      {scope==="lifetime"&&game._season&&<span style={{marginLeft:4,fontSize:9,color:"rgba(255,255,255,0.2)"}}>{game._season}</span>}
+                      {isH2H&&<span style={{marginLeft:6,fontSize:9,color:"#00dc6e",fontWeight:700}}>H2H</span>}
+                    </div>
+                    <div style={{fontWeight:700,fontSize:13,minWidth:28,textAlign:"right",color:val!=null&&!isNaN(val)?(hit?"#00dc6e":"#ff6b6b"):"rgba(255,255,255,0.2)"}}>
+                      {val!=null&&!isNaN(val)?val:"—"}
+                    </div>
+                    <div style={{fontSize:10,color:"rgba(255,255,255,0.25)",width:34,textAlign:"right"}}>
+                      {val!=null&&!isNaN(val)?(hit?"HIT":"MISS"):""}
+                    </div>
+                  </div>
+                );
+              })}
+              {gameLog.length>30&&<div style={{textAlign:"center",paddingTop:10,fontSize:10,color:"rgba(255,255,255,0.3)"}}>
+                Showing 30 of {gameLog.length} games
+              </div>}
+            </div>
+          </>
+        )}
+
+        <div style={{marginTop:12,textAlign:"center",fontSize:10,color:"rgba(255,255,255,0.12)",letterSpacing:"1px",paddingBottom:24}}>
+          THE +EV CAVE · PAID MEMBER TOOL · DATA VIA MLB STATS API · NOT FINANCIAL ADVICE
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<MLBChecker/>);
+</script>
+</body>
+</html>
