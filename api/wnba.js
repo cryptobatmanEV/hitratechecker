@@ -1,0 +1,103 @@
+const WNBA_HEADERS = {
+  'Accept': 'application/json, text/plain, */*',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Origin': 'https://www.wnba.com',
+  'Referer': 'https://www.wnba.com/',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'x-nba-stats-origin': 'stats',
+  'x-nba-stats-token': 'true',
+};
+
+function seasonStr(offset = 0) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  // WNBA runs May-Sept, current season starts in May
+  const cur = month >= 5 ? year : year - 1;
+  return String(cur - offset);
+}
+
+async function fetchWithTimeout(url, options = {}, ms = 9000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const r = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return r;
+  } catch(e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('WNBA API timed out after 9s');
+    throw e;
+  }
+}
+
+function toRows(resultSet) {
+  if (!resultSet || !resultSet.headers || !resultSet.rowSet) return [];
+  const h = resultSet.headers;
+  return resultSet.rowSet.map(row => {
+    const obj = {};
+    h.forEach((k, i) => obj[k] = row[i]);
+    return obj;
+  });
+}
+
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  const { action, query, playerId, scope } = req.query;
+
+  try {
+    if (action === 'search') {
+      // Search across recent seasons to find active players
+      const season = seasonStr(0);
+      const url = `https://stats.wnba.com/stats/commonallplayers?IsOnlyCurrentSeason=0&LeagueID=10&Season=${season}`;
+      const r = await fetchWithTimeout(url, { headers: WNBA_HEADERS });
+      const text = await r.text();
+      if (!r.ok) return res.status(500).json({ error: `WNBA returned ${r.status}: ${text.slice(0,200)}` });
+      let d;
+      try { d = JSON.parse(text); } catch(e) { return res.status(500).json({ error: `WNBA returned non-JSON: ${text.slice(0,200)}` }); }
+      const rows = toRows(d.resultSets[0]);
+      const q = (query || '').toLowerCase();
+      const matches = rows
+        .filter(p => p.IS_ACTIVE_FLAG === 'Y' && (p.DISPLAY_FIRST_LAST || '').toLowerCase().includes(q))
+        .slice(0, 10)
+        .map(p => ({ id: p.PERSON_ID, name: p.DISPLAY_FIRST_LAST, sub: p.TEAM_ABBREVIATION || '' }));
+      return res.json({ players: matches });
+    }
+
+    if (action === 'gamelog') {
+      const seasons = scope === 'career'
+        ? [seasonStr(0), seasonStr(1), seasonStr(2)]
+        : [seasonStr(0)];
+      let allGames = [];
+      for (const season of seasons) {
+        try {
+          const url = `https://stats.wnba.com/stats/playergamelog?PlayerID=${playerId}&Season=${season}&SeasonType=Regular+Season&LeagueID=10`;
+          const r = await fetchWithTimeout(url, { headers: WNBA_HEADERS });
+          if (!r.ok) continue;
+          const d = await r.json();
+          if (!d.resultSets?.[0]) continue;
+          const rows = toRows(d.resultSets[0]);
+          rows.forEach(g => {
+            const parts = (g.MATCHUP || '').split(/ vs\. | @ /);
+            const opp = parts.length > 1 ? parts[1] : '';
+            const parsed = new Date(g.GAME_DATE || '');
+            const iso = isNaN(parsed) ? (g.GAME_DATE || '') : parsed.toISOString().split('T')[0];
+            allGames.push({
+              pts: g.PTS, reb: g.REB, ast: g.AST, stl: g.STL,
+              blk: g.BLK, fg3m: g.FG3M, turnover: g.TOV, min: g.MIN,
+              _date: iso, _opp: opp, _oppFull: opp, _season: season,
+            });
+          });
+        } catch(e) { continue; }
+      }
+      return res.json({ games: allGames });
+    }
+
+    res.status(400).json({ error: 'Unknown action' });
+  } catch(e) {
+    res.status(500).json({ error: e.message, stack: e.stack?.split('\n')[0] });
+  }
+}
