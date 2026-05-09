@@ -3,109 +3,76 @@ export default async function handler(req, res) {
   const KEY = '0TvQnueqKa5mxJntVWt0w4LpLfEkrV1Ta8rQBb9Z';
   const ESB  = 'https://esports-api.lolesports.com/persisted/gw';
   const FEED = 'https://feed.lolesports.com/livestats/v1';
+  const R = {};
 
-  // Pull every T1 match from the schedule, get every game, extract Faker's exact stats
-  // Then return them in chronological order with opponent so user can verify against gol.gg
-  const results = [];
-  const errors  = [];
+  // LCK Split 1 2026 (Jan 13 - Mar 1 2026) tournament ID confirmed from earlier debug
+  const SPLIT1_ID = '115548106590082745';
 
+  // Step 1: Get Split 1 schedule and find a T1 match
   try {
-    // Get LCK schedule
-    const sched = await fetch(`${ESB}/getSchedule?hl=en-US&leagueId=98767991310872058`, {
+    const r = await fetch(`${ESB}/getSchedule?hl=en-US&leagueId=98767991310872058&tournamentId=${SPLIT1_ID}`, {
       headers: { 'x-api-key': KEY }
     });
-    const schedD = await sched.json();
-    const events = schedD.data?.schedule?.events || [];
+    const d = await r.json();
+    const events = d.data?.schedule?.events || [];
+    const t1 = events.filter(e => e.state === 'completed' && (e.match?.teams||[]).some(t=>t.code==='T1')).slice(0,3);
+    R.split1_t1_matches = t1.map(e => ({ id: e.match?.id, date: e.startTime, teams: e.match?.teams?.map(t=>t.code) }));
+  } catch(e) { R.split1_error = e.message; }
 
-    // Filter completed T1 matches
-    const t1Events = events
-      .filter(ev => ev.state === 'completed' && (ev.match?.teams||[]).some(t => t.code === 'T1'))
-      .slice(0, 12)
-      .map(ev => {
-        const opp = (ev.match?.teams||[]).find(t => t.code !== 'T1');
-        return { id: ev.match.id, date: ev.startTime.split('T')[0], opp: opp?.code || '' };
-      });
+  // Step 2: Get game ID from a Split 1 T1 match
+  if (R.split1_t1_matches?.length) {
+    try {
+      const matchId = R.split1_t1_matches[0].id;
+      const matchDate = R.split1_t1_matches[0].date.split('T')[0];
+      const r = await fetch(`${ESB}/getEventDetails?hl=en-US&id=${matchId}`, { headers: { 'x-api-key': KEY } });
+      const d = await r.json();
+      const games = (d.data?.event?.match?.games || []).filter(g => g.state === 'completed');
+      R.split1_game = { gameId: games[0]?.id, date: matchDate };
 
-    // Get game IDs for each match in parallel
-    const eventDetails = await Promise.all(
-      t1Events.map(({ id, date, opp }) =>
-        fetch(`${ESB}/getEventDetails?hl=en-US&id=${id}`, { headers: { 'x-api-key': KEY } })
-          .then(r => r.json())
-          .then(d => ({
-            games: (d.data?.event?.match?.games || [])
-              .filter(g => g.state === 'completed')
-              .map((g, idx) => ({ gameId: g.id, date, opp, gameNum: idx + 1 }))
-          }))
-          .catch(e => { errors.push(`event ${id}: ${e.message}`); return { games: [] }; })
-      )
-    );
-
-    const allGames = eventDetails.flatMap(e => e.games);
-
-    // Fetch all feed windows in parallel batches of 5
-    for (let i = 0; i < allGames.length; i += 5) {
-      const batch = allGames.slice(i, i + 5);
-      const feeds = await Promise.all(
-        batch.map(({ gameId, date }) =>
-          fetch(`${FEED}/window/${gameId}?startingTime=${date}T23:59:50.000Z`)
-            .then(r => r.ok ? r.json() : null)
-            .catch(() => null)
-        )
-      );
-
-      for (let j = 0; j < feeds.length; j++) {
-        const wd = feeds[j];
-        const { gameId, date, opp, gameNum } = batch[j];
-        if (!wd) { errors.push(`no feed for ${gameId}`); continue; }
-
-        const frames = wd.frames || [];
-        if (!frames.length) { errors.push(`no frames for ${gameId}`); continue; }
+      // Step 3: Test if the feed still has this old game
+      if (games[0]?.id) {
+        const feedR = await fetch(`${FEED}/window/${games[0].id}?startingTime=${matchDate}T23:59:50.000Z`);
+        const feedD = await feedR.json();
+        const frames = feedD.frames || [];
         const last = frames[frames.length - 1];
-
-        const blueMeta = wd.gameMetadata?.blueTeamMetadata?.participantMetadata || [];
-        const redMeta  = wd.gameMetadata?.redTeamMetadata?.participantMetadata  || [];
-        const faker    = [...blueMeta, ...redMeta].find(p => (p.summonerName||'').toLowerCase().includes('faker'));
-
-        if (!faker) { errors.push(`faker not in game ${gameId}`); continue; }
-
-        const isBlue = blueMeta.some(p => p.participantId === faker.participantId);
-        const parts  = (isBlue ? last.blueTeam?.participants : last.redTeam?.participants) || [];
-        const frame  = parts.find(p => p.participantId === faker.participantId);
-
-        if (!frame) { errors.push(`no frame for faker in ${gameId}`); continue; }
-
-        const blueGold = last.blueTeam?.totalGold || 0;
-        const redGold  = last.redTeam?.totalGold  || 0;
-        const win = isBlue ? blueGold >= redGold : redGold > blueGold;
-
-        results.push({
-          date,
-          game:     gameNum,
-          vs:       opp,
-          champion: faker.championId || '',
-          kills:    frame.kills    || 0,
-          deaths:   frame.deaths   || 0,
-          assists:  frame.assists  || 0,
-          cs:       frame.creepScore || 0,
-          result:   win ? 'W' : 'L',
-        });
+        const blueMeta = feedD.gameMetadata?.blueTeamMetadata?.participantMetadata || [];
+        const redMeta  = feedD.gameMetadata?.redTeamMetadata?.participantMetadata  || [];
+        const faker = [...blueMeta,...redMeta].find(p=>(p.summonerName||'').toLowerCase().includes('faker'));
+        const isBlue = blueMeta.some(p=>p.participantId===faker?.participantId);
+        const parts = (isBlue ? last?.blueTeam?.participants : last?.redTeam?.participants)||[];
+        const frame = parts.find(p=>p.participantId===faker?.participantId);
+        R.split1_feed = {
+          status: feedR.status,
+          frameCount: frames.length,
+          faker_kills: frame?.kills ?? 'not found',
+          faker_deaths: frame?.deaths ?? 'not found',
+          faker_cs: frame?.creepScore ?? 'not found',
+          champion: faker?.championId ?? 'not found'
+        };
       }
-    }
-  } catch(e) {
-    return res.status(500).json({ error: e.message });
+    } catch(e) { R.split1_game_error = e.message; }
   }
 
-  // Sort chronologically
-  results.sort((a, b) => a.date.localeCompare(b.date) || a.game - b.game);
+  // Step 4: Also test LCK Split 2 2025 (even older - Apr-Jun 2025)
+  try {
+    const SPLIT2_2025 = '113503260417890076';
+    const r = await fetch(`${ESB}/getSchedule?hl=en-US&leagueId=98767991310872058&tournamentId=${SPLIT2_2025}`, {
+      headers: { 'x-api-key': KEY }
+    });
+    const d = await r.json();
+    const events = d.data?.schedule?.events || [];
+    const t1 = events.filter(e => e.state === 'completed' && (e.match?.teams||[]).some(t=>t.code==='T1')).slice(0,1);
+    if (t1[0]) {
+      const evR = await fetch(`${ESB}/getEventDetails?hl=en-US&id=${t1[0].match?.id}`, { headers: { 'x-api-key': KEY } });
+      const evD = await evR.json();
+      const games = (evD.data?.event?.match?.games||[]).filter(g=>g.state==='completed');
+      if (games[0]) {
+        const matchDate = t1[0].startTime.split('T')[0];
+        const feedR = await fetch(`${FEED}/window/${games[0].id}?startingTime=${matchDate}T23:59:50.000Z`);
+        R.split2_2025_feed = { status: feedR.status, date: matchDate, gameId: games[0].id };
+      }
+    }
+  } catch(e) { R.split2_2025_error = e.message; }
 
-  return res.status(200).json({ 
-    total: results.length, 
-    errors, 
-    // Group by date for easy comparison against gol.gg
-    byDate: results.reduce((acc, r) => {
-      if (!acc[r.date]) acc[r.date] = [];
-      acc[r.date].push(r);
-      return acc;
-    }, {})
-  });
+  return res.status(200).json(R);
 }
