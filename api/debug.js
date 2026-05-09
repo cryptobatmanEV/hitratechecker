@@ -1,50 +1,46 @@
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  const results = {};
+  const R = {};
 
-  async function test(label, url, headers = {}) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
-    try {
-      const r = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'application/json, text/html, */*',
-          ...headers
-        },
-        signal: controller.signal
-      });
-      clearTimeout(timer);
-      const text = await r.text();
-      results[label] = { status: r.status, ok: r.ok, isJson: text.trim().startsWith('{') || text.trim().startsWith('['), preview: text.slice(0, 400) };
-    } catch(e) {
-      clearTimeout(timer);
-      results[label] = { error: e.name === 'AbortError' ? 'BLOCKED/TIMEOUT' : e.message };
-    }
+  async function t(label, fn) {
+    try { R[label] = { ok: true, ...(await Promise.race([fn(), new Promise((_, j) => setTimeout(() => j(new Error('TIMEOUT')), 6000))])) }; }
+    catch(e) { R[label] = { ok: false, error: e.message }; }
   }
 
-  // HLTV player match stats (s1mple player ID is 7998 on HLTV)
-  await test('hltv_player_stats',
-    'https://www.hltv.org/stats/players/7998/s1mple'
-  );
+  R.env = {
+    RIOT_API_KEY: process.env.RIOT_API_KEY ? `SET (${process.env.RIOT_API_KEY.slice(0,12)}...)` : 'NOT SET',
+    FACEIT_API_KEY: process.env.FACEIT_API_KEY ? `SET (${process.env.FACEIT_API_KEY.slice(0,8)}...)` : 'NOT SET',
+  };
 
-  // HLTV player matches endpoint
-  await test('hltv_player_matches',
-    'https://www.hltv.org/stats/players/matches/7998/s1mple?startDate=2024-01-01&endDate=2026-12-31'
-  );
+  await t('faceit_search', async () => {
+    const r = await fetch('https://open.faceit.com/data/v4/search/players?nickname=s1mple&game=cs2&limit=3', { headers: { Authorization: `Bearer ${process.env.FACEIT_API_KEY}` } });
+    const d = await r.json();
+    return { status: r.status, found: (d.items||[]).length, first: d.items?.[0]?.nickname };
+  });
 
-  // HLTV JSON endpoint used by some community tools
-  await test('hltv_json',
-    'https://hltv-api.vercel.app/api/player?id=7998'
-  );
+  await t('faceit_match_stats', async () => {
+    const p = await fetch('https://open.faceit.com/data/v4/players?nickname=s1mple&game=cs2', { headers: { Authorization: `Bearer ${process.env.FACEIT_API_KEY}` } });
+    const pd = await p.json();
+    const h = await fetch(`https://open.faceit.com/data/v4/players/${pd.player_id}/history?game=cs2&limit=1`, { headers: { Authorization: `Bearer ${process.env.FACEIT_API_KEY}` } });
+    const hd = await h.json();
+    const mid = hd.items?.[0]?.match_id;
+    const s = await fetch(`https://open.faceit.com/data/v4/matches/${mid}/stats`, { headers: { Authorization: `Bearer ${process.env.FACEIT_API_KEY}` } });
+    const sd = await s.json();
+    const pl = sd.rounds?.[0]?.teams?.[0]?.players?.[0];
+    return { status: s.status, statKeys: pl ? Object.keys(pl.player_stats||{}).join(', ') : 'none' };
+  });
 
-  // PandaScore CS2 game detail - test with a real game ID from earlier match data
-  // From cs2_real_match we got match with ID we need to find
-  await test('pandascore_cs2_match_detail',
-    'https://api.pandascore.co/csgo/matches/past?filter[forfeit]=false&filter[detailed_stats]=true&sort=-end_at&per_page=1',
-    { 'Authorization': 'Bearer EZh1xSg_WEPRN6z0RgNlFAD7Std9vS4r6HKJbaZLo0BbxSRULNg' }
-  );
+  await t('riot_account', async () => {
+    const r = await fetch('https://asia.api.riotgames.com/riot/account/v1/accounts/by-riot-id/Faker/T1', { headers: { 'X-Riot-Token': process.env.RIOT_API_KEY } });
+    const d = await r.json();
+    return { status: r.status, gameName: d.gameName, hasPuuid: !!d.puuid, error: d.status?.message };
+  });
 
-  results._time = new Date().toISOString();
-  return res.status(200).json(results);
+  await t('mlb_search', async () => {
+    const r = await fetch('https://statsapi.mlb.com/api/v1/people/search?names=Ohtani&sportId=1&active=true');
+    const d = await r.json();
+    return { status: r.status, found: (d.people||[]).length };
+  });
+
+  return res.status(200).json({ timestamp: new Date().toISOString(), ...R });
 }
