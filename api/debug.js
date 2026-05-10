@@ -3,56 +3,60 @@ export default async function handler(req, res) {
   const UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
   const R = {};
 
+  // Try to find individual match pages by fetching the tournament page
+  // and looking for 9z Team vs Legacy match link
   try {
     const r = await fetch(
-      'https://liquipedia.net/counterstrike/api.php?action=parse&page=Dgt/Results&prop=text&format=json',
+      'https://liquipedia.net/counterstrike/api.php?action=parse&page=BetBoom/RUSH_B!_Summit/2026/Part_Three&prop=text&format=json',
       { headers: UA }
     );
     const d = await r.json();
     const html = d.parse?.text?.['*'] || '';
 
-    // Extract ALL links from table rows with their surrounding context
-    const rowMatches = [...html.matchAll(/table2[^"]*row--body[^>]*>([\s\S]*?)<\/tr>/gi)].slice(0, 10);
+    // Find match links (vs format)
+    const vsLinks = [...html.matchAll(/href="\/counterstrike\/([^"]*(?:vs|Vs|VS)[^"]*|[^"]*9z[^"]*|[^"]*Legacy[^"]*)"/gi)]
+      .map(m => m[1]).filter(l => !l.includes('#')).slice(0, 10);
+    R.vs_links = [...new Set(vsLinks)];
 
-    R.rows_with_links = rowMatches.map(row => {
-      const links = [...row[1].matchAll(/href="\/counterstrike\/([^"]+)"/gi)].map(m => m[1]);
-      const cells = [...row[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)]
-        .map(c => c[1].replace(/<[^>]+>/g, '').replace(/&[^;]+;/g, ' ').trim());
-      return { links, cells: cells.filter(c => c.length > 0) };
-    });
+    // Look for any sub-page links within the tournament
+    const subLinks = [...html.matchAll(/href="\/counterstrike\/(BetBoom[^"#]+)"/gi)]
+      .map(m => m[1]).filter(l => l !== 'BetBoom/RUSH_B!_Summit/2026/Part_Three');
+    R.sub_links = [...new Set(subLinks)].slice(0, 10);
 
-    // Find match-specific links (containing _vs_ or specific match format)
-    const allLinks = rowMatches.flatMap(row =>
-      [...row[1].matchAll(/href="\/counterstrike\/([^"#]+)"/gi)].map(m => m[1])
-    );
-    R.unique_links = [...new Set(allLinks)].slice(0, 15);
-
-    // Fetch the first meaningful tournament/match link
-    const matchLink = allLinks.find(l => l.includes('2026') || l.includes('2025'));
-    if (matchLink) {
-      R.fetching = matchLink;
-      const mr = await fetch(`https://liquipedia.net/counterstrike/${matchLink}`, { headers: UA });
-      const mhtml = await mr.text();
-      R.match_status = mr.status;
-
-      // Look for dgt in this page with surrounding stats
-      const idx = mhtml.toLowerCase().indexOf('dgt');
-      if (idx > -1) {
-        // Get text around dgt mention, strip tags
-        const raw = mhtml.slice(Math.max(0, idx - 500), idx + 500);
-        R.dgt_context = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      }
-
-      // Look for kill/death patterns near player stats
-      const killPatterns = [...mhtml.matchAll(/(\d{1,3})\s*<\/td>\s*<td[^>]*>\s*(\d{1,3})\s*<\/td>/g)]
-        .slice(0, 5).map(m => `${m[1]}/${m[2]}`);
-      R.kill_death_cells = killPatterns;
-
-      // Look for "Kills" header
-      R.has_kills_header = mhtml.toLowerCase().includes('kills');
-      R.has_rating_header = mhtml.toLowerCase().includes('rating');
+    // Look for "dgt" in the page context
+    const dgtIdx = html.toLowerCase().indexOf('dgt');
+    if (dgtIdx > -1) {
+      const context = html.slice(Math.max(0, dgtIdx - 200), dgtIdx + 400)
+        .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      R.dgt_on_tournament_page = context;
     }
-  } catch(e) { R.error = e.message; }
+  } catch(e) { R.tournament_error = e.message; }
+
+  // Try fetching a specific match sub-page
+  const matchPagesToTry = [
+    'BetBoom/RUSH_B!_Summit/2026/Part_Three/Grand_Final',
+    'BetBoom/RUSH_B!_Summit/2026/Part_Three/Finals',
+    'BetBoom/RUSH_B!_Summit/2026/Part_Three/Results',
+  ];
+
+  R.match_page_attempts = [];
+  for (const page of matchPagesToTry) {
+    try {
+      const r = await fetch(`https://liquipedia.net/counterstrike/api.php?action=parse&page=${encodeURIComponent(page)}&prop=text&format=json`, { headers: UA });
+      const d = await r.json();
+      const html = d.parse?.text?.['*'] || '';
+      const hasDgt = html.toLowerCase().includes('dgt');
+      const hasKills = html.toLowerCase().includes('kills') || html.toLowerCase().includes('k/d');
+      const hasStats = html.toLowerCase().includes('rating') && hasDgt;
+      R.match_page_attempts.push({
+        page, status: r.status, hasDgt, hasKills, hasStats,
+        length: html.length,
+        dgt_context: hasDgt ? html.slice(html.toLowerCase().indexOf('dgt') - 100, html.toLowerCase().indexOf('dgt') + 300).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : null
+      });
+    } catch(e) {
+      R.match_page_attempts.push({ page, error: e.message });
+    }
+  }
 
   return res.status(200).json(R);
 }
