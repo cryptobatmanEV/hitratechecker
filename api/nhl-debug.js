@@ -4,17 +4,17 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const HEADERS = { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' };
 
-  // Dahlin (skater) and Shesterkin (goalie id: 8478009)
-  const [skaterRes, goalieRes] = await Promise.all([
-    fetch('https://api-web.nhle.com/v1/player/8480839/game-log/20252026/2', { headers: HEADERS }),
-    fetch('https://api-web.nhle.com/v1/player/8478009/game-log/20252026/2', { headers: HEADERS }),
-  ]);
-  const [skaterData, goalieData] = await Promise.all([skaterRes.json(), goalieRes.json()]);
+  // Test per-game stats endpoint for Dahlin (8480839) with isGame=true
+  const cayenne = encodeURIComponent('playerId=8480839 and seasonId=20252026 and gameTypeId=2');
+  const url = `https://api.nhle.com/stats/rest/en/skater/summary?isAggregate=false&isGame=true&limit=3&sort=gameDate&cayenneExp=${cayenne}`;
+
+  const r = await fetch(url, { headers: HEADERS });
+  const d = await r.json();
 
   return res.json({
-    skater_first_game_keys: Object.keys(skaterData.gameLog?.[0] || {}),
-    skater_first_game: skaterData.gameLog?.[0],
-    goalie_first_game_keys: Object.keys(goalieData.gameLog?.[0] || {}),
-    goalie_first_game: goalieData.gameLog?.[0],
+    status: r.status,
+    total: d.total,
+    first_game_keys: Object.keys(d.data?.[0] || {}),
+    first_game: d.data?.[0],
   });
 }
