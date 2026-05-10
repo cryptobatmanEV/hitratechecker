@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hit Rate Checker | The +EV Cave</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{background:#0a0d0f;font-family:'IBM Plex Mono',monospace;color:#fff;}
+    .card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:2px;padding:16px 20px;margin-bottom:12px;}
+    .label-sm{font-size:10px;color:rgba(255,255,255,0.3);letter-spacing:2px;margin-bottom:12px;}
+    .tool-input{width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:2px;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:13px;padding:12px 16px;outline:none;transition:all .15s;}
+    .tool-input:focus{border-color:rgba(0,220,110,0.5);background:rgba(0,220,110,0.04);}
+    .tool-input::placeholder{color:rgba(255,255,255,0.25);}
+    .stat-select{width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:2px;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:12px;padding:12px 16px;outline:none;cursor:pointer;appearance:none;}
+    .stat-select option{background:#141a1f;}
+    .dropdown{position:absolute;top:100%;left:0;right:0;z-index:100;background:#141a1f;border:1px solid rgba(0,220,110,0.25);border-top:none;border-radius:0 0 2px 2px;max-height:240px;overflow-y:auto;}
+    .dropdown-item{padding:10px 16px;cursor:pointer;font-size:12px;color:rgba(255,255,255,0.7);border-bottom:1px solid rgba(255,255,255,0.04);}
+    .dropdown-item:hover,.dropdown-item:active{background:rgba(0,220,110,0.1);color:#00dc6e;}
+    .dropdown-item .sub{font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px;}
+    .search-wrap{position:relative;}
+    .sport-btn{flex:1;padding:10px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:rgba(255,255,255,0.4);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;transition:all .15s;letter-spacing:1px;font-weight:600;}
+    .sport-btn:first-child{border-radius:2px 0 0 2px;}
+    .sport-btn:last-child{border-radius:0 2px 2px 0;border-left:none;}
+    .sport-btn.active{background:rgba(0,220,110,0.15);border-color:#00dc6e;color:#00dc6e;}
+    .ou-btn{flex:1;padding:9px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:rgba(255,255,255,0.4);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;font-weight:700;}
+    .ou-btn:first-child{border-radius:2px 0 0 2px;}
+    .ou-btn:last-child{border-radius:0 2px 2px 0;border-left:none;}
+    .ou-over.active{background:rgba(0,220,110,0.15);border-color:#00dc6e;color:#00dc6e;}
+    .ou-under.active{background:rgba(255,77,77,0.12);border-color:#ff4d4d;color:#ff6b6b;}
+    .check-btn{width:100%;padding:14px;background:#00dc6e;color:#0a0d0f;border:none;border-radius:2px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer;margin-bottom:12px;}
+    .check-btn:disabled{background:rgba(0,220,110,0.25);cursor:not-allowed;color:rgba(0,0,0,0.4);}
+    .rate-card{flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:2px;padding:12px 8px;text-align:center;min-width:0;}
+    .rate-card .lbl{font-size:9px;color:rgba(255,255,255,0.3);letter-spacing:1.5px;margin-bottom:5px;}
+    .rate-card .pct{font-size:20px;font-family:'Syne',sans-serif;font-weight:800;}
+    .rate-card .frac{font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px;}
+    .rate-card .avg{font-size:10px;color:rgba(255,255,255,0.35);margin-top:3px;}
+    .rate-hot{border-color:rgba(0,220,110,0.4)!important;}
+    .rate-mid{border-color:rgba(255,200,0,0.35)!important;}
+    .rate-cold{border-color:rgba(255,77,77,0.35)!important;}
+    .rate-grey{border-color:rgba(255,255,255,0.1)!important;}
+    .rate-gold{border-color:rgba(255,200,0,0.4)!important;}
+    .rate-blue{border-color:rgba(80,140,255,0.4)!important;}
+    .game-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:11px;}
+    .game-row:last-child{border-bottom:none;}
+    .hit-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+    .dot-hit{background:#00dc6e;}
+    .dot-miss{background:#ff4d4d;}
+    .spinner{display:inline-block;width:24px;height:24px;border:2px solid rgba(0,220,110,0.2);border-top-color:#00dc6e;border-radius:50%;animation:spin .8s linear infinite;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .error-box{background:rgba(255,77,77,0.08);border:1px solid rgba(255,77,77,0.3);border-radius:2px;padding:12px 16px;font-size:11px;color:#ff6b6b;margin-bottom:12px;line-height:1.6;}
+    .debug-box{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:2px;padding:10px 16px;font-size:10px;color:rgba(255,255,255,0.3);margin-bottom:12px;}
+    .sec-title{font-size:11px;color:rgba(255,255,255,0.5);font-weight:600;margin-bottom:10px;letter-spacing:.5px;}
+    .game-card{padding:10px 14px;border:1px solid rgba(255,255,255,0.07);border-radius:2px;cursor:pointer;margin-bottom:8px;background:rgba(255,255,255,0.02);}
+    .game-card:hover{border-color:rgba(0,220,110,0.3);}
+    .pill-tag{display:inline-block;padding:3px 8px;border-radius:20px;font-size:9px;font-weight:700;letter-spacing:1px;margin-left:6px;}
+    .tag-l{background:rgba(80,140,255,0.15);border:1px solid rgba(80,140,255,0.3);color:#80a8ff;}
+    .tag-r{background:rgba(255,120,0,0.12);border:1px solid rgba(255,120,0,0.3);color:#ff9955;}
+    .tag-good{background:rgba(0,220,110,0.15);border:1px solid rgba(0,220,110,0.3);color:#00dc6e;}
+    .tag-bad{background:rgba(255,77,77,0.12);border:1px solid rgba(255,77,77,0.3);color:#ff6b6b;}
+    .stat-grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px;}
+    .mini-stat{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:2px;padding:10px;text-align:center;}
+    .mini-stat .ml{font-size:9px;color:rgba(255,255,255,0.3);letter-spacing:1px;margin-bottom:4px;}
+    .mini-stat .mv{font-size:16px;font-weight:700;font-family:'Syne',sans-serif;}
+    .vs-card{background:rgba(80,140,255,0.04);border:1px solid rgba(80,140,255,0.2);border-radius:2px;padding:14px 16px;margin-bottom:12px;}
+    .vs-card .vs-title{font-size:11px;color:#80a8ff;font-weight:600;margin-bottom:10px;}
+    .career-card{background:rgba(255,200,0,0.04);border:1px solid rgba(255,200,0,0.2);border-radius:2px;padding:14px 16px;margin-bottom:12px;}
+    .career-card .ct{font-size:11px;color:#ffc800;font-weight:600;margin-bottom:10px;}
+    .streak-box{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:2px;padding:6px 12px;font-size:11px;font-weight:700;}
+    .trend-up{color:#00dc6e;} .trend-down{color:#ff6b6b;} .trend-flat{color:rgba(255,255,255,0.4);}
+    .hint-box{margin-top:8px;font-size:10px;color:rgba(255,255,255,0.3);line-height:1.6;}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef}=React;
+
+// ── Stat lists ────────────────────────────────────────────────────────────────
+const HIT_STATS=[
+  {label:"Hits",calc:s=>s.hits},
+  {label:"Total Bases",calc:s=>{const sg=(s.hits||0)-(s.doubles||0)-(s.triples||0)-(s.homeRuns||0);return sg+2*(s.doubles||0)+3*(s.triples||0)+4*(s.homeRuns||0);}},
+  {label:"Home Runs",calc:s=>s.homeRuns},
+  {label:"RBIs",calc:s=>s.rbi},
+  {label:"Runs",calc:s=>s.runs},
+  {label:"Stolen Bases",calc:s=>s.stolenBases},
+  {label:"Strikeouts (Batter)",calc:s=>s.strikeOuts},
+  {label:"Walks",calc:s=>s.baseOnBalls},
+  {label:"Hits+Runs+RBIs",calc:s=>(s.hits||0)+(s.runs||0)+(s.rbi||0)},
+  {label:"At Bats",calc:s=>s.atBats},
+];
+const PIT_STATS=[
+  {label:"Strikeouts",calc:s=>s.strikeOuts},
+  {label:"Hits Allowed",calc:s=>s.hits},
+  {label:"Earned Runs",calc:s=>s.earnedRuns},
+  {label:"Walks Allowed",calc:s=>s.baseOnBalls},
+  {label:"Outs Recorded",calc:s=>{const p=(s.inningsPitched||"0").toString().split(".");return parseInt(p[0])*3+(parseInt(p[1])||0);}},
+  {label:"Pitches Thrown",calc:s=>s.numberOfPitches||s.pitchesThrown},
+  {label:"HR Allowed",calc:s=>s.homeRuns},
+];
+const ES_STATS={
+  cs2:[
+    {label:"Kills",calc:g=>g.kills},
+    {label:"Deaths",calc:g=>g.deaths},
+    {label:"Assists",calc:g=>g.assists},
+    {label:"Headshots",calc:g=>g.headshots},
+    {label:"HS %",calc:g=>g.hsPct},
+    {label:"K/D Ratio",calc:g=>g.kd},
+    {label:"K+A",calc:g=>(g.kills||0)+(g.assists||0)},
+  ],
+  lol:[
+    {label:"Kills",calc:g=>g.kills},
+    {label:"Deaths",calc:g=>g.deaths},
+    {label:"Assists",calc:g=>g.assists},
+    {label:"CS (Creep Score)",calc:g=>g.cs},
+    {label:"K+A",calc:g=>(g.kills||0)+(g.assists||0)},
+    {label:"KDA",calc:g=>g.deaths>0?Math.round(((g.kills+g.assists)/g.deaths)*10)/10:((g.kills||0)+(g.assists||0))},
+  ],
+};
+
+// ── MLB helpers ───────────────────────────────────────────────────────────────
+function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function currentSeason(){return new Date().getFullYear();}
+async function mlbGet(url){const r=await fetch(url);if(!r.ok)throw new Error(`MLB ${r.status}`);return r.json();}
+async function searchMLB(q){const d=await mlbGet(`https://statsapi.mlb.com/api/v1/people/search?names=${encodeURIComponent(q)}&sportId=1&active=true`);return(d.people||[]).slice(0,10).map(p=>({id:p.id,name:p.fullName,sub:`${p.primaryPosition?.abbreviation||""} · ${p.currentTeam?.name||""}`.trim()}));}
+async function getPlayerInfo(id){const d=await mlbGet(`https://statsapi.mlb.com/api/v1/people/${id}?hydrate=currentTeam`);const p=d.people?.[0]||{};return{id,name:p.fullName,pitchHand:p.pitchHand?.code||"",batSide:p.batSide?.code||"",team:p.currentTeam?.name||"",teamId:p.currentTeam?.id};}
+async function getTodayGames(){const d=await mlbGet(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${todayStr()}&gameType=R&hydrate=probablePitcher,team`);const g=[];(d.dates||[]).forEach(dt=>(dt.games||[]).forEach(gm=>{const aP=gm.teams?.away?.probablePitcher,hP=gm.teams?.home?.probablePitcher;g.push({id:gm.gamePk,away:gm.teams?.away?.team?.name||"",awayAbbr:gm.teams?.away?.team?.abbreviation||"",awayId:gm.teams?.away?.team?.id,home:gm.teams?.home?.team?.name||"",homeAbbr:gm.teams?.home?.team?.abbreviation||"",homeId:gm.teams?.home?.team?.id,time:gm.gameDate,awayPitcher:aP?{id:aP.id,name:aP.fullName}:null,homePitcher:hP?{id:hP.id,name:hP.fullName}:null});}));return g;}
+async function getGameLog(pid,group,seasons){let all=[];for(const s of seasons){try{const d=await mlbGet(`https://statsapi.mlb.com/api/v1/people/${pid}/stats?stats=gameLog&season=${s}&sportId=1&group=${group}`);(d.stats?.[0]?.splits||[]).forEach(x=>all.push({stat:x.stat,_date:x.date,_opp:x.opponent?.name||x.opponent?.abbreviation||"",_isHome:x.isHome}));}catch(e){continue;}}return all.reverse();}
+async function getCareerStats(pid,group){try{const d=await mlbGet(`https://statsapi.mlb.com/api/v1/people/${pid}/stats?stats=career&group=${group}&sportId=1`);return d.stats?.[0]?.splits?.[0]?.stat||null;}catch{return null;}}
+async function getVsPitcher(bId,pId){try{const d=await mlbGet(`https://statsapi.mlb.com/api/v1/people/${bId}/stats?stats=vsPlayer&opposingPlayerId=${pId}&group=hitting&sportId=1`);return d.stats?.[0]?.splits?.[0]?.stat||null;}catch{return null;}}
+function parseIP(ip){if(!ip)return 0;const p=ip.toString().split('.');return(parseInt(p[0])||0)+(parseInt(p[1])||0)/3;}
+async function getVsTeam(pId,tId){try{const d=await mlbGet(`https://statsapi.mlb.com/api/v1/people/${pId}/stats?stats=vsTeam&opposingTeamId=${tId}&group=pitching&sportId=1`);const s=d.stats?.[0]?.splits?.[0]?.stat||null;if(!s)return null;const r={...s};const ip=parseIP(r.inningsPitched);if(ip>0){if(r.whip==null&&r.hits!=null&&r.baseOnBalls!=null)r.whip=((r.hits+r.baseOnBalls)/ip).toFixed(3);if(r.era==null&&r.earnedRuns!=null)r.era=((r.earnedRuns*9)/ip).toFixed(2);}return r;}catch{return null;}}
+async function getHandSplits(pid,group){try{const d=await mlbGet(`https://statsapi.mlb.com/api/v1/people/${pid}/stats?stats=statSplits&season=${currentSeason()}&group=${group}&sitCodes=vl,vr&sportId=1`);const s=d.stats?.[0]?.splits||[];return{vsL:s.find(x=>x.split?.code==="vl")?.stat||null,vsR:s.find(x=>x.split?.code==="vr")?.stat||null};}catch{return{vsL:null,vsR:null};}}
+async function getDayNight(pid,group){try{const d=await mlbGet(`https://statsapi.mlb.com/api/v1/people/${pid}/stats?stats=statSplits&season=${currentSeason()}&group=${group}&sitCodes=d,n&sportId=1`);const s=d.stats?.[0]?.splits||[];return{day:s.find(x=>x.split?.code==="d")?.stat||null,night:s.find(x=>x.split?.code==="n")?.stat||null};}catch{return{day:null,night:null};}}
+
+// ── Esports proxies ───────────────────────────────────────────────────────────
+async function searchCS2(q){
+  const r=await fetch(`/api/cs2?action=search&nickname=${encodeURIComponent(q)}`);
+  const d=await r.json();
+  if(d.error)throw new Error(d.error);
+  return d.players||[];
+}
+async function getCS2Log(id,scope){const r=await fetch(`/api/cs2?action=gamelog&playerId=${encodeURIComponent(id)}&scope=${scope}`);const d=await r.json();if(d.error)throw new Error(d.error);return d.games||[];}
+
+async function searchLoL(q){const r=await fetch(`/api/lol?action=search&name=${encodeURIComponent(q)}`);const d=await r.json();if(d.error)throw new Error(d.error);if(!d.players?.length)throw new Error(`No pro player found for "${q}". Check spelling or try their in-game name.`);return d.players||[];}
+async function getLoLLog(teamId,teamCode,leagueName,playerName){const p=`action=gamelog&teamId=${encodeURIComponent(teamId)}&teamCode=${encodeURIComponent(teamCode||'')}&leagueName=${encodeURIComponent(leagueName||'')}&playerName=${encodeURIComponent(playerName)}&name=${encodeURIComponent(playerName)}`;const r=await fetch(`/api/lol?${p}`);const d=await r.json();if(d.error)throw new Error(d.error);return d.games||[];}
+async function searchRiot(q,game){const r=await fetch(`/api/riot?action=search&game=${game}&name=${encodeURIComponent(q)}`);const d=await r.json();if(!r.ok||d.error)throw new Error(d.error||`Not found — try Name#Tag format (e.g. Faker#T1)`);return d.players||[];}
+async function getRiotLog(game,puuid,routing,platform,scope){const params=`action=gamelog&game=${game}&puuid=${encodeURIComponent(puuid)}&routing=${routing}&platform=${platform||'na'}&scope=${scope}`;const r=await fetch(`/api/riot?${params}`);const d=await r.json();if(d.error)throw new Error(d.error);return d.games||[];}
+
+// ── Calc ──────────────────────────────────────────────────────────────────────
+function hitRate(games,fn,line,ou){const vals=games.map(fn).filter(v=>v!=null&&!isNaN(v));if(!vals.length)return null;const hits=vals.filter(v=>ou==="over"?v>line:v<line).length;return{rate:Math.round(hits/vals.length*100),hits,total:vals.length,avg:Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10)/10};}
+function calcStreak(games,fn,line,ou){let s=0;for(const g of games){const v=fn(g);if(v==null||isNaN(v))break;if(ou==="over"?v>line:v<line)s++;else break;}return s;}
+function rateColor(r){return r>=65?"#00dc6e":r>=50?"#ffc800":"#ff6b6b";}
+function rateCls(r){return r>=65?"rate-hot":r>=50?"rate-mid":"rate-cold";}
+
+function RateCard({label,data,empty,blue,gold}){
+  const cls=blue?"rate-blue":gold?"rate-gold":(data?rateCls(data.rate):"rate-grey");
+  const color=blue?"#80a8ff":gold?"#ffc800":(data?rateColor(data.rate):"rgba(255,255,255,0.2)");
+  return(<div className={`rate-card ${cls}`}><div className="lbl">{label}</div>{data?<><div className="pct" style={{color}}>{data.rate}%</div><div className="frac">{data.hits}/{data.total}</div><div className="avg">avg {data.avg}</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>{empty||"—"}</div>}</div>);
+}
+function SB({label,value,color}){return(<div className="mini-stat"><div className="ml">{label}</div><div className="mv" style={{color:color||"#fff"}}>{(value!=null&&value!==""&&value!==undefined)?value:"—"}</div></div>);}
+function formatTime(iso){try{return new Date(iso).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",timeZoneName:"short"});}catch{return "";}}
+
+// ── Reusable search box ───────────────────────────────────────────────────────
+function SearchBox({label,placeholder,hint,onSearch,onSelect,selected}){
+  const [q,setQ]=useState("");
+  const [results,setRes]=useState([]);
+  const [busy,setBusy]=useState(false);
+  const [showDrop,setShow]=useState(false);
+  const [searchErr,setSErr]=useState("");
+  const wrap=useRef(null),timer=useRef(null);
+
+  useEffect(()=>{
+    const h=e=>{if(wrap.current&&!wrap.current.contains(e.target))setShow(false);};
+    document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);
+  },[]);
+
+  // Keep input in sync when parent clears the player
+  useEffect(()=>{if(!selected)setQ("");},[selected]);
+
+  const onChange=v=>{
+    setQ(v);setSErr("");
+    clearTimeout(timer.current);
+    if(v.length<2){setRes([]);setShow(false);return;}
+    timer.current=setTimeout(async()=>{
+      setBusy(true);
+      try{
+        const r=await onSearch(v);
+        setRes(r);
+        if(r.length>0)setShow(true);
+        else setSErr("No results found. Try a different spelling or include #Tag.");
+      }catch(e){setSErr(e.message);}
+      finally{setBusy(false);}
+    },500);
+  };
+
+  const pick=p=>{onSelect(p);setQ(p.name);setShow(false);setRes([]);setSErr("");};
+
+  return(
+    <div className="card">
+      <div className="label-sm">{label}</div>
+      <div className="search-wrap" ref={wrap}>
+        <input className="tool-input" type="text" placeholder={placeholder}
+          value={q} onChange={e=>onChange(e.target.value)}
+          onFocus={()=>results.length>0&&setShow(true)}/>
+        {busy&&<div style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)"}}><div className="spinner" style={{width:16,height:16,borderWidth:2}}/></div>}
+        {showDrop&&results.length>0&&(
+          <div className="dropdown">
+            {results.map(p=>(<div key={p.id} className="dropdown-item" onMouseDown={()=>pick(p)}><div>{p.name}</div>{p.sub&&<div className="sub">{p.sub}</div>}</div>))}
+          </div>
+        )}
+      </div>
+      {selected&&<div style={{marginTop:8,fontSize:11,color:"#00dc6e"}}>✓ {selected.name}{selected.sub&&<span style={{color:"rgba(255,255,255,0.4)"}}> · {selected.sub}</span>}</div>}
+      {searchErr&&!selected&&<div style={{marginTop:8,fontSize:10,color:"#ff6b6b"}}>{searchErr}</div>}
+      {hint&&<div className="hint-box">{hint}</div>}
+    </div>
+  );
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
+function App(){
+  const [sport,setSport]    =useState("MLB");
+  const [mlbGrp,setMlbGrp] =useState("hitting");
+  const [esGame,setEsGame]  =useState("cs2");
+
+  // Unified player — for esports, player.routing stores the Riot routing region
+  const [player,setPlayer]  =useState(null);
+
+  // MLB pitcher
+  const [pitcher,setPitcher]=useState(null);
+  const [pitchQ,setPitchQ]  =useState("");
+  const [pitchRes,setPitchR]=useState([]);
+  const [pitchBusy,setPB]   =useState(false);
+  const [showPD,setShowPD]  =useState(false);
+  const [pitcherInfo,setPInfo]=useState(null);
+
+  // MLB today
+  const [todayGames,setToday]=useState([]);
+  const [gLoad,setGLoad]    =useState(false);
+  const [showGames,setShowG]=useState(false);
+  const [selGame,setSelGame]=useState(null);
+  const [oppTmId,setOppTmId]=useState(null);
+  const [oppTmName,setOppTm]=useState("");
+
+  const [statIdx,setStatIdx]=useState(0);
+  const [line,setLine]      =useState("");
+  const [ou,setOu]          =useState("over");
+  const [h2hIn,setH2hIn]   =useState("");
+  const [h2hAct,setH2hAct] =useState("");
+  const [loading,setLoad]   =useState(false);
+  const [error,setError]    =useState("");
+  const [debug,setDebug]    =useState("");
+  const [gameLog,setGameLog]=useState([]);
+  const [carLog,setCarLog]  =useState([]);
+  const [carStats,setCarSt] =useState(null);
+  const [vsP,setVsP]        =useState(null);
+  const [vsT,setVsT]        =useState(null);
+  const [hands,setHands]    =useState(null);
+  const [dayNt,setDayNt]    =useState(null);
+
+  const pWrap=useRef(null),pTimer=useRef(null);
+
+  const isMLB=sport==="MLB";
+  const isES=sport==="ESPORTS";
+  const isCS2=isES&&esGame==="cs2";
+  const isLoL=isES&&esGame==="lol";
+  
+  const isPit=isMLB&&mlbGrp==="pitching";
+  const statList=isMLB?(mlbGrp==="hitting"?HIT_STATS:PIT_STATS):(ES_STATS[esGame]||ES_STATS.cs2);
+
+  const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setH2hIn("");setH2hAct("");setOppTmId(null);setOppTm("");};
+  useEffect(clearAll,[sport,mlbGrp,esGame]);
+  useEffect(()=>{if(isMLB){setGLoad(true);getTodayGames().then(g=>setToday(g)).catch(()=>{}).finally(()=>setGLoad(false));}},[sport]);
+  useEffect(()=>{const h=e=>{if(pWrap.current&&!pWrap.current.contains(e.target))setShowPD(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]);
+
+  const onSelectPlayer=async p=>{
+    setPlayer(p);setGameLog([]);setCarLog([]);setError("");setVsP(null);setVsT(null);setHands(null);setDayNt(null);setCarSt(null);setPitcher(null);setPitchQ("");setPInfo(null);setOppTmId(null);setOppTm("");
+    if(isMLB&&todayGames.length>0){
+      try{
+        const info=await getPlayerInfo(p.id);const tid=info.teamId;
+        if(tid){
+          const match=todayGames.find(g=>g.homeId===tid||g.awayId===tid);
+          if(match){
+            const isHome=match.homeId===tid;
+            const oppP=isHome?match.awayPitcher:match.homePitcher;
+            const oppT=isHome?{id:match.awayId,name:match.away}:{id:match.homeId,name:match.home};
+            if(oppT.id){setOppTmId(oppT.id);setOppTm(oppT.name||"");}
+            if(mlbGrp==="hitting"&&oppP){setPitcher(oppP);setPitchQ(oppP.name);getPlayerInfo(oppP.id).then(i=>setPInfo(i)).catch(()=>{});setDebug(`Auto-detected: vs ${oppP.name}`);}
+            if(mlbGrp==="pitching"&&oppT.id)setDebug(`Auto-detected: facing ${oppT.name} today`);
+          }
+        }
+      }catch(e){}
+    }
+  };
+
+  const handlePitcherQ=v=>{setPitchQ(v);setPitcher(null);setPInfo(null);setVsP(null);clearTimeout(pTimer.current);if(v.length<2){setPitchR([]);setShowPD(false);return;}pTimer.current=setTimeout(async()=>{setPB(true);try{const r=await searchMLB(v);setPitchR(r);setShowPD(true);}catch(e){}finally{setPB(false);}},400);};
+  const selectPitcher=async p=>{setPitcher(p);setPitchQ(p.name);setShowPD(false);setPitchR([]);setVsP(null);try{const i=await getPlayerInfo(p.id);setPInfo(i);}catch(e){}};
+  const selectGame=(game,side)=>{setSelGame({game,side});const p=side==="away"?game.homePitcher:game.awayPitcher;const oT=side==="away"?{id:game.awayId,name:game.away}:{id:game.homeId,name:game.home};if(p){setPitcher(p);setPitchQ(p.name);getPlayerInfo(p.id).then(i=>setPInfo(i)).catch(()=>{});}if(oT.id){setOppTmId(oT.id);setOppTm(oT.name||"");}setShowG(false);};
+
+  const canCheck=player!=null&&line&&!isNaN(parseFloat(line));
+
+  const checkHistory=async()=>{
+    if(!canCheck)return;
+    setLoad(true);setError("");setDebug("Fetching data...");
+    setGameLog([]);setCarLog([]);setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);
+    try{
+      if(isCS2){
+        setDebug("Fetching CS2 match history from FACEIT...");
+        const log=await getCS2Log(player.id,"season");
+        if(!log.length)throw new Error("No CS2 matches found. This player may have no recent FACEIT match stats.");
+        setGameLog(log);
+        try{const cl=await getCS2Log(player.id,"career");setCarLog(cl.slice(log.length));}catch(e){}
+      }else if(isLoL){
+        setDebug("Fetching LoL tournament match history...");
+        const log=await getLoLLog(player.teamId,player.teamCode,player.leagueName,player.playerName||player.name);
+        if(!log.length)throw new Error(`No tournament games found for ${player.name}. The LoL Esports API may not have recent data for this player's league yet.`);
+        setGameLog(log);
+      }else{
+        const season=currentSeason();
+        const log=await getGameLog(player.id,mlbGrp,[season]);
+        if(!log.length)throw new Error(`No ${season} season data found yet.`);
+        setGameLog(log);setDebug("Fetching career + splits...");
+        const cl=await getGameLog(player.id,mlbGrp,[season-1,season-2,season-3]);
+        setCarLog(cl);
+        const[cs,hs,dn]=await Promise.all([getCareerStats(player.id,mlbGrp),getHandSplits(player.id,mlbGrp),getDayNight(player.id,mlbGrp)]);
+        setCarSt(cs);setHands(hs);setDayNt(dn);
+        if(pitcher&&mlbGrp==="hitting"){const vsp=await getVsPitcher(player.id,pitcher.id);setVsP(vsp);}
+        if(mlbGrp==="pitching"&&oppTmId){const vst=await getVsTeam(player.id,oppTmId);setVsT(vst);}
+      }
+      setDebug("Done.");
+    }catch(e){setError(e.message);}
+    finally{setLoad(false);}
+  };
+
+  const lineNum=parseFloat(line);
+  const hasData=gameLog.length>0&&statList[statIdx]&&!isNaN(lineNum);
+  const getVal=g=>{try{return isMLB?statList[statIdx].calc(g.stat):statList[statIdx].calc(g);}catch{return null;}};
+  const getCV=g=>{try{return isMLB?statList[statIdx].calc(g.stat):statList[statIdx].calc(g);}catch{return null;}};
+  const l5=hasData?hitRate(gameLog.slice(0,5),getVal,lineNum,ou):null;
+  const l10=hasData?hitRate(gameLog.slice(0,10),getVal,lineNum,ou):null;
+  const l30=hasData?hitRate(gameLog.slice(0,30),getVal,lineNum,ou):null;
+  const seasonR=hasData?hitRate(gameLog,getVal,lineNum,ou):null;
+  const careerR=carLog.length>0?hitRate(carLog,getCV,lineNum,ou):null;
+  const h2hG=hasData&&h2hAct?gameLog.filter(g=>(g._opp||"").toLowerCase().includes(h2hAct.toLowerCase())):[];
+  const h2hR=h2hG.length?hitRate(h2hG,getVal,lineNum,ou):null;
+  const homeG=hasData?gameLog.filter(g=>g._isHome):[];
+  const awayG=hasData?gameLog.filter(g=>!g._isHome):[];
+  const homeR=homeG.length?hitRate(homeG,getVal,lineNum,ou):null;
+  const awayR=awayG.length?hitRate(awayG,getVal,lineNum,ou):null;
+  const streak=hasData?calcStreak(gameLog,getVal,lineNum,ou):0;
+  let trendLbl="",trendCls="trend-flat";
+  if(l5&&l10){const d=l5.rate-l10.rate;if(d>=10){trendLbl="↑ TRENDING UP";trendCls="trend-up";}else if(d<=-10){trendLbl="↓ TRENDING DOWN";trendCls="trend-down";}else{trendLbl="→ STABLE";trendCls="trend-flat";}}
+  let platoAdv=null;
+  if(isMLB&&mlbGrp==="hitting"&&pitcherInfo?.pitchHand&&hands){const ph=pitcherInfo.pitchHand;const rel=ph==="L"?hands.vsL:hands.vsR;if(rel)platoAdv={favorable:parseFloat(rel.avg||0)>=0.265};}
+  const vsPVal=vsP&&isMLB?statList[statIdx]?.calc(vsP):null;
+  const playerName=player?.name||"";
+
+  return(
+    <div style={{minHeight:"100vh",background:"#0a0d0f",backgroundImage:"radial-gradient(ellipse at 20% 0%,rgba(0,200,100,0.05) 0%,transparent 50%)",padding:"24px 16px",display:"flex",justifyContent:"center"}}>
+    <div style={{width:"100%",maxWidth:600}}>
+
+      <div style={{marginBottom:24,textAlign:"center"}}>
+        <div style={{fontFamily:"'Syne',sans-serif",fontSize:24,fontWeight:800,letterSpacing:"-0.5px"}}>HIT RATE <span style={{color:"#00dc6e"}}>CHECKER</span></div>
+        <div style={{marginTop:6,fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:"2px"}}>THE +EV CAVE · ULTIMATE PROP RESEARCH TOOL</div>
+      </div>
+
+      {/* Sport */}
+      <div className="card"><div className="label-sm">SPORT</div><div style={{display:"flex"}}><button className={"sport-btn"+(sport==="MLB"?" active":"")} onClick={()=>setSport("MLB")}>MLB</button><button className={"sport-btn"+(sport==="ESPORTS"?" active":"")} onClick={()=>setSport("ESPORTS")}>ESPORTS</button></div></div>
+
+      {/* MLB type */}
+      {isMLB&&<div className="card"><div className="label-sm">PLAYER TYPE</div><div style={{display:"flex"}}><button className={"sport-btn"+(mlbGrp==="hitting"?" active":"")} onClick={()=>setMlbGrp("hitting")}>BATTER</button><button className={"sport-btn"+(mlbGrp==="pitching"?" active":"")} onClick={()=>setMlbGrp("pitching")}>PITCHER</button></div></div>}
+
+      {/* Esports game */}
+      {isES&&<div className="card"><div className="label-sm">GAME</div><div style={{display:"flex"}}><button className={"sport-btn"+(esGame==="cs2"?" active":"")} onClick={()=>setEsGame("cs2")}>CS2</button><button className={"sport-btn"+(esGame==="lol"?" active":"")} onClick={()=>setEsGame("lol")}>LEAGUE OF LEGENDS</button></div></div>}
+
+      {/* MLB today's games */}
+      {isMLB&&(
+        <div className="card">
+          <div className="label-sm">TODAY'S MATCHUPS · {todayStr()}</div>
+          <button className={"sport-btn"+(showGames?" active":"")} style={{width:"100%",borderRadius:2,marginBottom:showGames?10:0}} onClick={()=>setShowG(!showGames)}>{gLoad?"LOADING GAMES...":(showGames?"HIDE MATCHUPS":"SHOW TODAY'S MATCHUPS + PROBABLE PITCHERS")}</button>
+          {showGames&&!gLoad&&(todayGames.length===0?<div style={{fontSize:11,color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"10px 0"}}>No games today.</div>
+            :<div style={{marginTop:4}}><div style={{fontSize:10,color:"rgba(255,255,255,0.3)",marginBottom:8}}>Click a side to auto-fill the opposing pitcher</div>
+              {todayGames.map(game=>(<div key={game.id} className="game-card"><div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:12,fontWeight:600}}>{game.awayAbbr} @ {game.homeAbbr}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.3)"}}>{formatTime(game.time)}</span></div><div style={{display:"flex",gap:12,flexWrap:"wrap"}}><span style={{fontSize:11,cursor:"pointer",color:selGame?.game?.id===game.id&&selGame?.side==="away"?"#00dc6e":"rgba(255,255,255,0.5)",textDecoration:"underline"}} onClick={()=>selectGame(game,"away")}>{game.awayAbbr} batting vs {game.homePitcher?game.homePitcher.name:"TBD"}</span><span style={{fontSize:11,cursor:"pointer",color:selGame?.game?.id===game.id&&selGame?.side==="home"?"#00dc6e":"rgba(255,255,255,0.5)",textDecoration:"underline"}} onClick={()=>selectGame(game,"home")}>{game.homeAbbr} batting vs {game.awayPitcher?game.awayPitcher.name:"TBD"}</span></div></div>))}
+            </div>)}
+        </div>
+      )}
+
+      {/* MLB batter/pitcher search */}
+      {isMLB&&(
+        <SearchBox
+          label={isPit?"PITCHER SEARCH":"BATTER SEARCH"}
+          placeholder={`Search ${isPit?"pitcher":"batter"} name...`}
+          onSearch={searchMLB}
+          onSelect={onSelectPlayer}
+          selected={player}
+          hint={player&&oppTmName?`Facing ${oppTmName} today`:null}
+        />
+      )}
+
+      {/* CS2 search — Level 10 FACEIT players only */}
+      {isCS2&&(
+        <SearchBox
+          label="CS2 PLAYER SEARCH"
+          placeholder="Type player name, e.g. NiKo, device, ZywOo, s1mple..."
+          onSearch={searchCS2}
+          onSelect={onSelectPlayer}
+          selected={player}
+          hint="Shows Level 10 FACEIT players only (all pro players are Level 10) · sorted by ELO"
+        />
+      )}
+
+      {/* LoL search — name or Name#Tag, auto-detects region */}
+      {isLoL&&(
+        <SearchBox
+          label="LEAGUE OF LEGENDS PLAYER SEARCH · PRO PLAYERS ONLY"
+          placeholder="Type player name, e.g. Faker, Chovy, Zeus, BDD..."
+          onSearch={searchLoL}
+          onSelect={onSelectPlayer}
+          selected={player}
+          hint="Searches official LoL Esports team rosters · Real tournament match data"
+        />
+      )}
+
+          </div>
+        </div>
+      )}
+      )}
+
+      {/* MLB opposing pitcher */}
+      {isMLB&&mlbGrp==="hitting"&&(
+        <div className="card">
+          <div className="label-sm">OPPOSING PITCHER · AUTO-DETECTED FROM TODAY'S SCHEDULE</div>
+          <div className="search-wrap" ref={pWrap}>
+            <input className="tool-input" type="text" placeholder="Search opposing pitcher... (optional)" value={pitchQ} onChange={e=>handlePitcherQ(e.target.value)} onFocus={()=>pitchRes.length&&setShowPD(true)}/>
+            {pitchBusy&&<div style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)"}}><div className="spinner" style={{width:16,height:16,borderWidth:2}}/></div>}
+            {showPD&&pitchRes.length>0&&(<div className="dropdown">{pitchRes.map(p=>(<div key={p.id} className="dropdown-item" onMouseDown={()=>selectPitcher(p)}><div>{p.name}</div>{p.sub&&<div className="sub">{p.sub}</div>}</div>))}</div>)}
+          </div>
+          {pitcher&&<div style={{marginTop:8,fontSize:11,color:"#00dc6e"}}>✓ {pitcher.name}{pitcherInfo?.pitchHand&&<span className={`pill-tag ${pitcherInfo.pitchHand==="L"?"tag-l":"tag-r"}`}>{pitcherInfo.pitchHand}HP</span>}{platoAdv&&<span className={`pill-tag ${platoAdv.favorable?"tag-good":"tag-bad"}`}>{platoAdv.favorable?"PLATOON ADV":"PLATOON DIS"}</span>}</div>}
+        </div>
+      )}
+
+      {/* Stat + line */}
+      <div className="card"><div className="label-sm">STAT CATEGORY</div><select className="stat-select" value={statIdx} onChange={e=>setStatIdx(parseInt(e.target.value))}>{statList.map((s,i)=><option key={i} value={i}>{s.label}</option>)}</select></div>
+      <div className="card"><div className="label-sm">PROJECTION LINE</div><div style={{display:"flex",gap:10}}><input className="tool-input" type="number" step="0.5" placeholder="e.g. 19.5" value={line} onChange={e=>setLine(e.target.value)} style={{flex:1}}/><div style={{display:"flex"}}><button className={"ou-btn ou-over"+(ou==="over"?" active":"")} onClick={()=>setOu("over")}>OVER</button><button className={"ou-btn ou-under"+(ou==="under"?" active":"")} onClick={()=>setOu("under")}>UNDER</button></div></div></div>
+
+      {error&&<div className="error-box">{error}</div>}
+      {!error&&debug&&<div className="debug-box">{debug}</div>}
+      <button className="check-btn" onClick={checkHistory} disabled={!canCheck||loading}>{loading?"FETCHING DATA...":"CHECK HISTORY"}</button>
+      {loading&&<div style={{textAlign:"center",padding:"24px 0"}}><div className="spinner"/><div style={{marginTop:10,fontSize:11,color:"rgba(255,255,255,0.3)"}}>Fetching data...</div></div>}
+
+      {/* ── RESULTS ────────────────────────────────────────────────────────── */}
+      {hasData&&!loading&&(<>
+
+        <div className="card"><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+          <div><div style={{fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:"1.5px",marginBottom:4}}>CURRENT STREAK</div><div className="streak-box">{streak>0?<><span style={{color:"#00dc6e"}}>{streak}</span><span style={{color:"rgba(255,255,255,0.5)",fontSize:10}}>consecutive {ou==="over"?"overs":"unders"}</span></>:<span style={{color:"#ff6b6b"}}>0 · streak ended</span>}</div></div>
+          <div><div style={{fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:"1.5px",marginBottom:4}}>TREND (L5 vs L10)</div><div className="streak-box"><span className={trendCls}>{trendLbl||"—"}</span>{l5&&l10&&<span style={{fontSize:10,color:"rgba(255,255,255,0.3)",marginLeft:4}}>{l5.rate}% vs {l10.rate}%</span>}</div></div>
+        </div></div>
+
+        <div className="card">
+          <div className="sec-title">{playerName} · {statList[statIdx]?.label} {ou==="over"?"Over":"Under"} {lineNum}<span style={{marginLeft:8,fontSize:10,color:"rgba(255,255,255,0.3)",fontWeight:400}}>({gameLog.length} games)</span></div>
+          <div style={{display:"flex",gap:6,marginBottom:8}}><RateCard label="L5" data={l5}/><RateCard label="L10" data={l10}/><RateCard label="L30" data={l30}/><RateCard label="SEASON" data={seasonR}/></div>
+          <div style={{display:"flex",gap:6}}>
+            {isMLB&&careerR&&<RateCard label="CAREER" data={careerR} gold/>}
+            {isMLB&&<RateCard label="HOME" data={homeR} empty="No home games"/>}
+            {isMLB&&<RateCard label="AWAY" data={awayR} empty="No away games"/>}
+            <RateCard label={"H2H"+(h2hAct?` ${h2hAct.toUpperCase()}`:"")} data={h2hR} empty={h2hAct?"No games":"Set below"}/>
+          </div>
+        </div>
+
+        {isMLB&&carStats&&(<div className="career-card"><div className="ct">CAREER STATS · All Time</div><div className="stat-grid-4">{mlbGrp==="hitting"?<><SB label="AVG" value={carStats.avg||"—"} color="#ffc800"/><SB label="OPS" value={carStats.ops||"—"} color="#ffc800"/><SB label="HR" value={carStats.homeRuns} color="#ffc800"/><SB label="RBI" value={carStats.rbi} color="#ffc800"/><SB label="HITS" value={carStats.hits} color="#ffc800"/><SB label="BB" value={carStats.baseOnBalls} color="#ffc800"/><SB label="K" value={carStats.strikeOuts} color="#ffc800"/><SB label="SB" value={carStats.stolenBases} color="#ffc800"/></>:<><SB label="ERA" value={carStats.era||"—"} color="#ffc800"/><SB label="WHIP" value={carStats.whip||"—"} color="#ffc800"/><SB label="K" value={carStats.strikeOuts} color="#ffc800"/><SB label="W" value={carStats.wins} color="#ffc800"/><SB label="IP" value={carStats.inningsPitched||"—"} color="#ffc800"/><SB label="BB" value={carStats.baseOnBalls} color="#ffc800"/><SB label="HR" value={carStats.homeRuns} color="#ffc800"/><SB label="ER" value={carStats.earnedRuns} color="#ffc800"/></>}</div></div>)}
+        {isMLB&&isPit&&vsT&&(<div className="vs-card"><div className="vs-title">PITCHER VS {oppTmName.toUpperCase()||"OPPOSING TEAM"} · Career</div><div className="stat-grid-4"><SB label="K" value={vsT.strikeOuts} color="#80a8ff"/><SB label="HITS" value={vsT.hits} color="#80a8ff"/><SB label="BB" value={vsT.baseOnBalls} color="#80a8ff"/><SB label="HR" value={vsT.homeRuns} color="#80a8ff"/></div></div>)}
+        {isMLB&&mlbGrp==="hitting"&&hands&&(hands.vsL||hands.vsR)&&(<div className="card"><div className="sec-title">HANDEDNESS SPLITS · {currentSeason()} Season</div><div style={{display:"flex",gap:8}}><div className="rate-card rate-blue" style={{flex:1}}><div className="lbl">VS LHP{pitcherInfo?.pitchHand==="L"&&<span style={{marginLeft:4,color:"#80a8ff"}}>← TODAY</span>}</div>{hands.vsL?<><div className="pct" style={{color:"#80a8ff",fontSize:16}}>{hands.vsL.avg||"—"}</div><div className="frac">{hands.vsL.atBats||0} AB</div><div className="avg">{hands.vsL.homeRuns||0} HR · {hands.vsL.strikeOuts||0} K</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div><div className="rate-card rate-blue" style={{flex:1}}><div className="lbl">VS RHP{pitcherInfo?.pitchHand==="R"&&<span style={{marginLeft:4,color:"#80a8ff"}}>← TODAY</span>}</div>{hands.vsR?<><div className="pct" style={{color:"#80a8ff",fontSize:16}}>{hands.vsR.avg||"—"}</div><div className="frac">{hands.vsR.atBats||0} AB</div><div className="avg">{hands.vsR.homeRuns||0} HR · {hands.vsR.strikeOuts||0} K</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div></div></div>)}
+        {isMLB&&dayNt&&(dayNt.day||dayNt.night)&&(<div className="card"><div className="sec-title">DAY / NIGHT SPLITS · {currentSeason()} Season</div><div style={{display:"flex",gap:8}}><div className="rate-card" style={{flex:1}}><div className="lbl">DAY GAMES</div>{dayNt.day?<><div className="pct" style={{color:"#ffc800",fontSize:16}}>{dayNt.day.avg||dayNt.day.era||"—"}</div><div className="frac">{dayNt.day.atBats||dayNt.day.inningsPitched||0} {mlbGrp==="hitting"?"AB":"IP"}</div><div className="avg">{mlbGrp==="hitting"?`${dayNt.day.homeRuns||0} HR · ${dayNt.day.strikeOuts||0} K`:`${dayNt.day.strikeOuts||0} K`}</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div><div className="rate-card" style={{flex:1}}><div className="lbl">NIGHT GAMES</div>{dayNt.night?<><div className="pct" style={{color:"#a0b4ff",fontSize:16}}>{dayNt.night.avg||dayNt.night.era||"—"}</div><div className="frac">{dayNt.night.atBats||dayNt.night.inningsPitched||0} {mlbGrp==="hitting"?"AB":"IP"}</div><div className="avg">{mlbGrp==="hitting"?`${dayNt.night.homeRuns||0} HR · ${dayNt.night.strikeOuts||0} K`:`${dayNt.night.strikeOuts||0} K`}</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div></div></div>)}
+        {isMLB&&mlbGrp==="hitting"&&pitcher&&(<div className="vs-card"><div className="vs-title">BATTER VS PITCHER · {playerName} vs {pitcher.name}{pitcherInfo?.pitchHand&&<span className={`pill-tag ${pitcherInfo.pitchHand==="L"?"tag-l":"tag-r"}`}>{pitcherInfo.pitchHand}HP</span>}{platoAdv&&<span className={`pill-tag ${platoAdv.favorable?"tag-good":"tag-bad"}`}>{platoAdv.favorable?"PLATOON ADV":"PLATOON DIS"}</span>}</div>{vsP?<><div className="stat-grid-4"><SB label="AVG" value={vsP.avg||"—"} color="#80a8ff"/><SB label="AB" value={vsP.atBats} color="#80a8ff"/><SB label="HITS" value={vsP.hits} color="#80a8ff"/><SB label="HR" value={vsP.homeRuns} color="#80a8ff"/><SB label="RBI" value={vsP.rbi} color="#80a8ff"/><SB label="BB" value={vsP.baseOnBalls} color="#80a8ff"/><SB label="K" value={vsP.strikeOuts} color="#80a8ff"/><SB label="OPS" value={vsP.ops||"—"} color="#80a8ff"/></div>{vsPVal!=null&&<div style={{marginTop:8,fontSize:11,color:"rgba(255,255,255,0.5)"}}>Career {statList[statIdx].label} vs {pitcher.name}: <span style={{marginLeft:4,fontWeight:700,color:vsPVal>lineNum?"#00dc6e":"#ff6b6b"}}>{vsPVal}</span><span style={{marginLeft:6,fontSize:10,color:vsPVal>lineNum?"#00dc6e":"#ff6b6b"}}>({vsPVal>lineNum?"OVER":"UNDER"} {lineNum})</span></div>}</>:<div style={{fontSize:11,color:"rgba(255,255,255,0.3)"}}>No career BVP data found.</div>}</div>)}
+
+        <div className="card"><div className="label-sm">H2H OPPONENT FILTER</div><div style={{display:"flex",gap:8}}><input className="tool-input" type="text" placeholder="Team or opponent name" value={h2hIn} onChange={e=>setH2hIn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&setH2hAct(h2hIn.trim())} style={{flex:1}}/><button className="sport-btn active" style={{flex:"0 0 auto",borderRadius:2,padding:"0 16px"}} onClick={()=>setH2hAct(h2hIn.trim())}>APPLY</button>{h2hAct&&<button className="sport-btn" style={{flex:"0 0 auto",borderRadius:2,padding:"0 12px",color:"#ff6b6b",borderColor:"rgba(255,77,77,0.3)"}} onClick={()=>{setH2hAct("");setH2hIn("");}}>CLEAR</button>}</div>{h2hAct&&<div style={{marginTop:8,fontSize:11,color:h2hG.length?"#00dc6e":"rgba(255,77,77,0.7)"}}>{h2hG.length?`${h2hG.length} games vs "${h2hAct}"`:`No games found vs "${h2hAct}"`}</div>}</div>
+
+        <div className="card"><div className="sec-title">Game Log</div>
+          {gameLog.slice(0,30).map((game,i)=>{
+            const val=getVal(game);const hit=val!=null&&!isNaN(val)&&(ou==="over"?val>lineNum:val<lineNum);const isH2H=h2hAct&&(game._opp||"").toLowerCase().includes(h2hAct.toLowerCase());
+            return(<div key={i} className="game-row" style={isH2H?{background:"rgba(0,220,110,0.04)",borderRadius:2,paddingLeft:4}:{}}>
+              <div className={`hit-dot ${val!=null&&!isNaN(val)?(hit?"dot-hit":"dot-miss"):"dot-miss"}`} style={{opacity:val!=null?1:0.3}}/>
+              <div style={{flex:1,color:"rgba(255,255,255,0.4)",fontSize:11}}>{(game._date||"").toString().slice(0,10)}{game._opp?` vs ${game._opp}`:""}{game.champion&&<span style={{marginLeft:4,fontSize:9,color:"rgba(255,255,255,0.3)"}}>{game.champion}</span>}{game.result&&<span style={{marginLeft:6,fontSize:9,color:game.result==="W"?"#00dc6e":"#ff6b6b"}}>{game.result}</span>}{isH2H&&<span style={{marginLeft:6,fontSize:9,color:"#00dc6e",fontWeight:700}}>H2H</span>}</div>
+              <div style={{fontWeight:700,fontSize:13,minWidth:28,textAlign:"right",color:val!=null&&!isNaN(val)?(hit?"#00dc6e":"#ff6b6b"):"rgba(255,255,255,0.2)"}}>{val!=null&&!isNaN(val)?val:"—"}</div>
+              <div style={{fontSize:10,color:"rgba(255,255,255,0.25)",width:34,textAlign:"right"}}>{val!=null&&!isNaN(val)?(hit?"HIT":"MISS"):""}</div>
+            </div>);
+          })}
+          {gameLog.length>30&&<div style={{textAlign:"center",paddingTop:10,fontSize:10,color:"rgba(255,255,255,0.3)"}}>Showing 30 of {gameLog.length} games</div>}
+        </div>
+
+      </>)}
+
+      <div style={{marginTop:12,textAlign:"center",fontSize:10,color:"rgba(255,255,255,0.12)",letterSpacing:"1px",paddingBottom:24}}>THE +EV CAVE · PAID MEMBER TOOL · NOT FINANCIAL ADVICE</div>
+    </div></div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
