@@ -4,29 +4,35 @@ export default async function handler(req, res) {
   const BASE = 'https://open.faceit.com/data/v4';
   const R = {};
 
-  try {
-    // Find dgt
-    const sr = await fetch(`${BASE}/search/players?nickname=dgt&game=cs2&limit=5`, {
-      headers: { Authorization: `Bearer ${KEY}` }
-    });
-    const sd = await sr.json();
-    const dgt = (sd.items || []).find(p => p.nickname.toLowerCase() === 'dgt');
-    if (!dgt) return res.status(404).json({ error: 'dgt not found' });
-    R.player = { id: dgt.player_id, name: dgt.nickname, level: dgt.games?.cs2?.skill_level, elo: dgt.games?.cs2?.faceit_elo };
+  const DGT_ID = 'c5c4eb5b-0173-4660-8d95-f189f36dc571';
 
-    // Get last 40 matches
-    const hr = await fetch(`${BASE}/players/${dgt.player_id}/history?game=cs2&limit=40&offset=0`, {
-      headers: { Authorization: `Bearer ${KEY}` }
-    });
-    const hd = await hr.json();
-    const all = hd.items || [];
-    R.match_types = all.reduce((acc, m) => {
-      acc[m.competition_type] = (acc[m.competition_type] || 0) + 1;
-      return acc;
-    }, {});
-    R.all_competitions = [...new Set(all.map(m => `${m.competition_type}: ${m.competition_name}`))];
-    R.total = all.length;
-  } catch(e) { R.error = e.message; }
+  // 1. Find what teams dgt belongs to on FACEIT
+  try {
+    const r = await fetch(`${BASE}/players/${DGT_ID}/teams`, { headers: { Authorization: `Bearer ${KEY}` } });
+    const d = await r.json();
+    R.player_teams = d;
+  } catch(e) { R.teams_error = e.message; }
+
+  // 2. Search for FURIA as a FACEIT team
+  try {
+    const r = await fetch(`${BASE}/teams/search?game=cs2&name=FURIA&limit=5`, { headers: { Authorization: `Bearer ${KEY}` } });
+    const d = await r.json();
+    R.furia_search = (d.items || []).map(t => ({ id: t.team_id, name: t.nickname, members: t.members?.length }));
+  } catch(e) { R.furia_error = e.message; }
+
+  // 3. Search for recent ESL/BLAST championships on FACEIT
+  try {
+    const r = await fetch(`${BASE}/championships/search?game=cs2&name=ESL Pro League&limit=3`, { headers: { Authorization: `Bearer ${KEY}` } });
+    const d = await r.json();
+    R.esl_championships = (d.items || []).map(c => ({ id: c.championship_id, name: c.name, status: c.status }));
+  } catch(e) { R.esl_error = e.message; }
+
+  // 4. Also try searching for BLAST
+  try {
+    const r = await fetch(`${BASE}/championships/search?game=cs2&name=BLAST&limit=3`, { headers: { Authorization: `Bearer ${KEY}` } });
+    const d = await r.json();
+    R.blast_championships = (d.items || []).map(c => ({ id: c.championship_id, name: c.name, status: c.status }));
+  } catch(e) { R.blast_error = e.message; }
 
   return res.status(200).json(R);
 }
