@@ -1,94 +1,91 @@
-const FACEIT_KEY = process.env.FACEIT_API_KEY;
+const FACEIT_KEY  = process.env.FACEIT_API_KEY;
 const SCRAPER_KEY = process.env.SCRAPER_API_KEY;
 const FACEIT_BASE = 'https://open.faceit.com/data/v4';
-
-// Curated HLTV pro list — CS2 DFS slate players
-const HLTV_PROS = {
-  'niko':       { id: 9816,  slug: 'niko',       display: 'NiKo' },
-  'zywoo':      { id: 11893, slug: 'zywoo',      display: 'ZywOo' },
-  'device':     { id: 7592,  slug: 'device',     display: 'device' },
-  's1mple':     { id: 7998,  slug: 's1mple',     display: 's1mple' },
-  'm0nesy':     { id: 20399, slug: 'm0nesy',     display: 'm0NESY' },
-  'rain':       { id: 8183,  slug: 'rain',       display: 'rain' },
-  'ropz':       { id: 16015, slug: 'ropz',       display: 'ropz' },
-  'broky':      { id: 18053, slug: 'broky',      display: 'broky' },
-  'karrigan':   { id: 429,   slug: 'karrigan',   display: 'karrigan' },
-  'twistzz':    { id: 10394, slug: 'twistzz',    display: 'Twistzz' },
-  'naf':        { id: 10907, slug: 'naf',         display: 'NAF' },
-  'yekindar':   { id: 16049, slug: 'yekindar',   display: 'YEKINDAR' },
-  'elige':      { id: 9176,  slug: 'elige',       display: 'EliGE' },
-  'fallen':     { id: 2023,  slug: 'fallen',      display: 'FalleN' },
-  'kscerato':   { id: 16695, slug: 'kscerato',   display: 'KSCERATO' },
-  'yuurih':     { id: 15631, slug: 'yuurih',      display: 'yuurih' },
-  'dgt':        { id: 16833, slug: 'dgt',          display: 'dgt' },
-  'chelo':      { id: 15972, slug: 'chelo',        display: 'chelo' },
-  'art':        { id: 16044, slug: 'art',           display: 'arT' },
-  'floppy':     { id: 17989, slug: 'floppy',       display: 'floppy' },
-  'brehze':     { id: 12148, slug: 'brehze',       display: 'brehze' },
-  'grim':       { id: 18008, slug: 'grim',          display: 'Grim' },
-  'sh1ro':      { id: 18594, slug: 'sh1ro',         display: 'sh1ro' },
-  'ax1le':      { id: 18700, slug: 'ax1le',         display: 'Ax1Le' },
-  'hobbit':     { id: 10314, slug: 'hobbit',        display: 'HObbit' },
-  'electronic': { id: 8816,  slug: 'electronic',   display: 'electronic' },
-  'b1t':        { id: 20586, slug: 'b1t',           display: 'B1T' },
-  'jame':       { id: 9960,  slug: 'jame',          display: 'Jame' },
-  'nicoodoz':   { id: 14936, slug: 'nicoodoz',      display: 'nicoodoz' },
-  'teses':      { id: 9312,  slug: 'teses',          display: 'TeSeS' },
-  'dupreeh':    { id: 3741,  slug: 'dupreeh',       display: 'dupreeh' },
-  'magisk':     { id: 9032,  slug: 'magisk',        display: 'Magisk' },
-  'blamef':     { id: 15219, slug: 'blamef',        display: 'blameF' },
-  'jabbi':      { id: 19244, slug: 'jabbi',          display: 'jabbi' },
-  'woxic':      { id: 11816, slug: 'woxic',          display: 'woxic' },
-  'krimz':      { id: 6920,  slug: 'krimz',          display: 'KRIMZ' },
-  'perfecto':   { id: 17351, slug: 'perfecto',      display: 'Perfecto' },
-  'sdy':        { id: 18098, slug: 'sdy',             display: 'sdy' },
-  'degster':    { id: 17757, slug: 'degster',        display: 'degster' },
-  'headtr1ck':  { id: 20643, slug: 'headtr1ck',     display: 'headtr1ck' },
-  'xantares':   { id: 11378, slug: 'xantares',      display: 'XANTARES' },
-  'frozen':     { id: 16255, slug: 'frozen',         display: 'frozen' },
-  'meyern':     { id: 18278, slug: 'meyern',        display: 'meyern' },
-  'max':        { id: 7412,  slug: 'max',             display: 'max' },
-  'luchov':     { id: 19466, slug: 'luchov',         display: 'luchov' },
-};
 
 async function scraperFetch(url) {
   const r = await fetch(
     `https://api.scraperapi.com?api_key=${SCRAPER_KEY}&url=${encodeURIComponent(url)}&render=false`,
-    { headers: { Accept: 'text/html' } }
+    { headers: { Accept: 'text/html,application/xhtml+xml' } }
   );
-  if (!r.ok) throw new Error(`ScraperAPI ${r.status}`);
+  if (!r.ok) throw new Error(`ScraperAPI ${r.status} for ${url}`);
   return r.text();
 }
 
+// Search HLTV for a player — returns [{id, slug, name, team}]
+async function searchHLTV(query) {
+  const html = await scraperFetch(`https://www.hltv.org/search?query=${encodeURIComponent(query)}`);
+  const players = [];
+  // Player links look like: href="/player/9816/NiKo"
+  const rx = /href="\/player\/(\d+)\/([^"]+)"[^>]*>([^<]*)<\/a>/gi;
+  let m;
+  while ((m = rx.exec(html)) !== null) {
+    const name = m[3].trim() || m[2];
+    if (!name || name.length < 1) continue;
+    players.push({ id: m[1], slug: m[2], display: name });
+  }
+  // Deduplicate by id
+  const seen = new Set();
+  return players.filter(p => { if (seen.has(p.id)) return false; seen.add(p.id); return true; }).slice(0, 8);
+}
+
+// Parse HLTV player matches table
+// Columns: Date | Event | Map | Opponent | Result | K | D | +/- | Rating
 function parseMatchesTable(html) {
   const games = [];
-  const tableRx = /<table[^>]*class="[^"]*stats-table[^"]*"[^>]*>([\s\S]*?)<\/table>/i;
-  const tableM  = html.match(tableRx);
-  if (!tableM) return games;
 
-  const rowRx = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  let rowM;
-  while ((rowM = rowRx.exec(tableM[1])) !== null) {
-    const cells = [];
-    const cellRx = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-    let cellM;
-    while ((cellM = cellRx.exec(rowM[1])) !== null) {
-      cells.push(cellM[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim());
+  // Find all stats tables
+  const tableRx = /<table[^>]*>([\s\S]*?)<\/table>/gi;
+  let tableM;
+  while ((tableM = tableRx.exec(html)) !== null) {
+    const tableHTML = tableM[1];
+
+    // Check if this table has K/D columns (the right table)
+    if (!/>\s*K\s*</.test(tableHTML) && !/>\s*Kills\s*</.test(tableHTML)) continue;
+
+    // Get column order from header row
+    const headerRx = /<th[^>]*>([\s\S]*?)<\/th>/gi;
+    const headers = [];
+    let hm;
+    while ((hm = headerRx.exec(tableHTML)) !== null) {
+      headers.push(hm[1].replace(/<[^>]+>/g, '').trim().toLowerCase());
     }
-    if (cells.length < 7) continue;
-    const kills  = parseInt(cells[5]);
-    const deaths = parseInt(cells[6]);
-    if (isNaN(kills)) continue;
-    games.push({
-      kills,
-      deaths,
-      assists: 0,
-      rating:  parseFloat(cells[8]) || null,
-      map:     cells[2]?.trim() || '',
-      win:     (cells[4] || '').toLowerCase().startsWith('w'),
-      _date:   cells[0]?.trim() || '',
-      _opp:    cells[3]?.replace(/\s+/g, ' ').trim() || '',
-    });
+
+    const kIdx   = headers.findIndex(h => h === 'k' || h === 'kills');
+    const dIdx   = headers.findIndex(h => h === 'd' || h === 'deaths');
+    const dateIdx = headers.findIndex(h => h === 'date');
+    const mapIdx  = headers.findIndex(h => h === 'map');
+    const oppIdx  = headers.findIndex(h => h === 'opponent' || h === 'opp');
+    const resIdx  = headers.findIndex(h => h === 'result' || h === 'res');
+
+    if (kIdx === -1 || dIdx === -1) continue;
+
+    // Parse data rows
+    const rowRx = /<tr[^>]*class="[^"]*(?:even|odd)[^"]*"[^>]*>([\s\S]*?)<\/tr>/gi;
+    let rowM;
+    while ((rowM = rowRx.exec(tableHTML)) !== null) {
+      const cells = [];
+      const cellRx = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+      let cellM;
+      while ((cellM = cellRx.exec(rowM[1])) !== null) {
+        cells.push(cellM[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim());
+      }
+      if (cells.length <= Math.max(kIdx, dIdx)) continue;
+
+      const kills  = parseInt(cells[kIdx]);
+      const deaths = parseInt(cells[dIdx]);
+      if (isNaN(kills) || kills < 0 || isNaN(deaths) || deaths < 0) continue;
+
+      games.push({
+        kills,
+        deaths,
+        assists: 0,
+        win:    resIdx >= 0 ? (cells[resIdx] || '').toLowerCase().startsWith('w') : null,
+        map:    mapIdx >= 0 ? cells[mapIdx] || '' : '',
+        _date:  dateIdx >= 0 ? cells[dateIdx] || '' : '',
+        _opp:   oppIdx >= 0 ? cells[oppIdx] || '' : '',
+      });
+    }
+    if (games.length) break; // found the right table
   }
   return games;
 }
@@ -97,7 +94,7 @@ function groupIntoSeries(maps) {
   const series = [];
   let i = 0;
   while (i < maps.length) {
-    const cur = maps[i];
+    const cur   = maps[i];
     const group = [cur];
     while (i + group.length < maps.length) {
       const next = maps[i + group.length];
@@ -110,8 +107,7 @@ function groupIntoSeries(maps) {
       kills:   group.reduce((s, g) => s + g.kills,  0),
       deaths:  group.reduce((s, g) => s + g.deaths, 0),
       assists: 0,
-      rating:  group[0].rating,
-      win:     wins > group.length / 2,
+      win:     group.length === 1 ? cur.win : wins > group.length / 2,
       maps:    group.map(g => ({ kills: g.kills, deaths: g.deaths, assists: 0, map: g.map })),
       _date:   cur._date,
       _opp:    cur._opp,
@@ -139,26 +135,22 @@ export default async function handler(req, res) {
   try {
     // ── Search ──────────────────────────────────────────────────────────────
     if (action === 'search') {
-      const q = (nickname || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!SCRAPER_KEY) return res.status(500).json({ error: 'SCRAPER_API_KEY not set in Vercel env vars' });
 
-      const proMatches = Object.entries(HLTV_PROS)
-        .filter(([key]) => key.includes(q) || q.includes(key))
-        .sort((a, b) => (a[0] === q ? -1 : b[0] === q ? 1 : a[0].length - b[0].length))
-        .slice(0, 6);
-
-      if (proMatches.length) {
+      const hltvPlayers = await searchHLTV(nickname);
+      if (hltvPlayers.length) {
         return res.json({
-          players: proMatches.map(([, p]) => ({
+          players: hltvPlayers.map(p => ({
             id:   `hltv_${p.id}_${p.slug}`,
             name: p.display,
-            sub:  'Pro · HLTV tournament data',
+            sub:  'HLTV · Pro tournament data',
           }))
         });
       }
 
-      // FACEIT fallback
+      // Fallback: FACEIT
       if (FACEIT_KEY) {
-        const d = await faceitFetch(`/search/players?nickname=${encodeURIComponent(nickname)}&game=cs2&offset=0&limit=10`);
+        const d     = await faceitFetch(`/search/players?nickname=${encodeURIComponent(nickname)}&game=cs2&offset=0&limit=10`);
         const items = (d.items || [])
           .filter(p => parseInt(p.games?.cs2?.skill_level) === 10)
           .sort((a, b) => (parseInt(b.games?.cs2?.faceit_elo) || 0) - (parseInt(a.games?.cs2?.faceit_elo) || 0))
@@ -167,7 +159,7 @@ export default async function handler(req, res) {
           players: items.map(p => ({
             id:   p.player_id,
             name: p.nickname,
-            sub:  `Lvl ${p.games?.cs2?.skill_level} · ELO ${p.games?.cs2?.faceit_elo} · ${(p.country || '').toUpperCase()} · FACEIT only`,
+            sub:  `Lvl ${p.games?.cs2?.skill_level} · ELO ${p.games?.cs2?.faceit_elo} · FACEIT only`,
           }))
         });
       }
@@ -177,7 +169,7 @@ export default async function handler(req, res) {
     // ── Game log ─────────────────────────────────────────────────────────────
     if (action === 'gamelog') {
       if (playerId?.startsWith('hltv_')) {
-        if (!SCRAPER_KEY) return res.status(500).json({ error: 'SCRAPER_API_KEY not configured in Vercel env vars' });
+        if (!SCRAPER_KEY) return res.status(500).json({ error: 'SCRAPER_API_KEY not set' });
 
         const parts    = playerId.split('_');
         const hltvId   = parts[1];
@@ -185,14 +177,17 @@ export default async function handler(req, res) {
 
         const end   = new Date().toISOString().split('T')[0];
         const start = new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0];
-        const url   = `https://www.hltv.org/stats/players/matches/${hltvId}/${hltvSlug}?startDate=${start}&endDate=${end}&rankingFilter=Top30`;
+        const url   = `https://www.hltv.org/stats/players/matches/${hltvId}/${hltvSlug}?startDate=${start}&endDate=${end}`;
 
         const html    = await scraperFetch(url);
         const rawMaps = parseMatchesTable(html);
 
         if (!rawMaps.length) {
+          // Return snippet for debugging
           return res.status(404).json({
-            error: `No match data found for ${hltvSlug}. HLTV page structure may have changed or player has no Top 30 matches in the last year.`
+            error: `No match data parsed for ${hltvSlug}. Check /api/cs2?action=debug&playerId=${playerId} to inspect HTML.`,
+            htmlLength: html.length,
+            htmlSnippet: html.slice(0, 500),
           });
         }
 
@@ -200,7 +195,7 @@ export default async function handler(req, res) {
         return res.json({ games: series.slice(0, 40) });
       }
 
-      // FACEIT fallback for non-pro players
+      // FACEIT fallback
       if (FACEIT_KEY) {
         const history = await faceitFetch(`/players/${playerId}/history?game=cs2&limit=20&offset=0`);
         const items   = (history.items || []).filter(m =>
@@ -220,6 +215,7 @@ export default async function handler(req, res) {
               win:     team.team_stats?.['Team Win'] === '1',
               _date:   new Date(m.finished_at * 1000).toISOString().split('T')[0],
               _opp:    '',
+              maps:    [],
             };
           } catch { return null; }
         }))).filter(Boolean);
@@ -227,6 +223,27 @@ export default async function handler(req, res) {
       }
 
       return res.json({ games: [] });
+    }
+
+    // ── Debug — returns raw HTML snippet for parser troubleshooting ──────────
+    if (action === 'debug') {
+      if (!SCRAPER_KEY) return res.status(500).json({ error: 'SCRAPER_API_KEY not set' });
+      const parts    = (playerId || '').split('_');
+      const hltvId   = parts[1] || '9816';
+      const hltvSlug = parts.slice(2).join('_') || 'NiKo';
+      const end   = new Date().toISOString().split('T')[0];
+      const start = new Date(Date.now() - 180 * 86400000).toISOString().split('T')[0];
+      const url   = `https://www.hltv.org/stats/players/matches/${hltvId}/${hltvSlug}?startDate=${start}&endDate=${end}`;
+      const html  = await scraperFetch(url);
+      const rawMaps = parseMatchesTable(html);
+      return res.json({
+        url,
+        htmlLength: html.length,
+        tablesFound: (html.match(/<table/gi) || []).length,
+        rawMapsFound: rawMaps.length,
+        first3Maps: rawMaps.slice(0, 3),
+        htmlTableSnippet: (html.match(/<table[\s\S]*?<\/table>/i) || ['not found'])[0].slice(0, 1000),
+      });
     }
 
     return res.status(400).json({ error: 'Unknown action' });
