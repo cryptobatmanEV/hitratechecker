@@ -3,28 +3,23 @@ export const config = { maxDuration: 30 };
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const { q = 'Dahlin' } = req.query;
+  const lastName = q.split(' ').pop();
+  const cap = lastName.charAt(0).toUpperCase() + lastName.slice(1).toLowerCase();
   const results = {};
 
-  const endpoints = [
-    // See raw player fields with no filter
-    `https://api.nhle.com/stats/rest/en/players?limit=3&sort=lastName`,
-    // Try capitalized name
-    `https://api.nhle.com/stats/rest/en/players?limit=5&sort=lastName&cayenneExp=lastName=%22${encodeURIComponent(q)}%22`,
-    // Try skater summary current season
-    `https://api.nhle.com/stats/rest/en/skater/summary?limit=3&sort=points&cayenneExp=seasonId=20252026`,
-    // Confirm game log works for Dahlin (id 8481533 was wrong - Dahlin is 8482671)
-    `https://api-web.nhle.com/v1/player/8482671/game-log/now`,
-  ];
+  const tests = {
+    skater_lastName: `https://api.nhle.com/stats/rest/en/skater/summary?limit=5&sort=points&cayenneExp=seasonId=20252026 and lastName="${cap}"`,
+    goalie_lastName: `https://api.nhle.com/stats/rest/en/goalie/summary?limit=5&sort=wins&cayenneExp=seasonId=20252026 and lastName="${cap}"`,
+    gamelog_confirmed: `https://api-web.nhle.com/v1/player/8482671/game-log/now`,
+  };
 
-  for (const url of endpoints) {
+  for (const [key, url] of Object.entries(tests)) {
     try {
       const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' } });
       const text = await r.text();
-      results[url.split('?')[0]] = { status: r.status, ok: r.ok, snippet: text.slice(0, 500) };
-    } catch(e) {
-      results[url.split('?')[0]] = { error: e.message };
-    }
+      results[key] = { status: r.status, ok: r.ok, snippet: text.slice(0, 400) };
+    } catch(e) { results[key] = { error: e.message }; }
   }
 
-  return res.json({ q, results });
+  return res.json({ q, cap, results });
 }
