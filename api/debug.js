@@ -3,48 +3,43 @@ export default async function handler(req, res) {
   const UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
   const R = {};
 
+  // Use action=parse with prop=text to get RENDERED HTML including template output
   try {
-    const r = await fetch('https://liquipedia.net/counterstrike/Dgt/Results', { headers: UA });
-    const html = await r.text();
+    const r = await fetch(
+      'https://liquipedia.net/counterstrike/api.php?action=parse&page=Dgt/Results&prop=text&format=json',
+      { headers: UA }
+    );
+    const d = await r.json();
+    const html = d.parse?.text?.['*'] || '';
+    R.rendered_length = html.length;
 
-    // Find the sortable table
-    const tableStart = html.indexOf('table2__table sortable');
-    const tableEnd   = html.indexOf('</table>', tableStart);
-    const tableHtml  = tableStart > -1 ? html.slice(tableStart - 10, tableEnd + 8) : '';
+    // Search with encoded underscores
+    const tableIdx = html.indexOf('table2&#95;&#95;table');
+    const tableIdx2 = html.indexOf('table2__table');
+    R.table_encoded_found = tableIdx > -1;
+    R.table_plain_found = tableIdx2 > -1;
 
-    R.table_found = tableStart > -1;
+    // Try to find rows
+    const rowMatches = [...html.matchAll(/table2[^"]*row--body[^>]*>([\s\S]*?)<\/tr>/gi)];
+    R.row_count = rowMatches.length;
 
-    if (tableHtml) {
-      // Extract all header cells to see column names
-      const headers = [...tableHtml.matchAll(/<th[^>]*>([\s\S]*?)<\/th>/gi)]
-        .map(m => m[1].replace(/<[^>]+>/g, '').trim())
-        .filter(h => h.length > 0);
-      R.column_headers = headers;
-
-      // Extract first 5 data rows
-      const rows = [...tableHtml.matchAll(/<tr[^>]*table2__row--body[^>]*>([\s\S]*?)<\/tr>/gi)]
-        .slice(0, 5)
-        .map(row => {
-          const cells = [...row[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)]
-            .map(c => c[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim());
-          return cells;
-        });
-      R.first_5_rows = rows;
+    if (rowMatches.length > 0) {
+      // Extract first 3 rows with cell text
+      R.first_3_rows = rowMatches.slice(0, 3).map(row =>
+        [...row[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)]
+          .map(c => c[1].replace(/<[^>]+>/g, '').replace(/&[^;]+;/g, ' ').replace(/\s+/g, ' ').trim())
+      );
     }
 
-    // Also fetch one individual match page to see kill stat format
-    // Try IEM Dallas 2025 as it's likely to have dgt
-    try {
-      const mr = await fetch('https://liquipedia.net/counterstrike/Intel_Extreme_Masters/2025/Dallas', { headers: UA });
-      const mhtml = await mr.text();
-      R.iem_dallas_status = mr.status;
-      // Look for dgt in the page
-      const dgtIdx = mhtml.toLowerCase().indexOf('dgt');
-      if (dgtIdx > -1) {
-        R.iem_dallas_dgt_context = mhtml.slice(Math.max(0, dgtIdx - 300), dgtIdx + 500)
-          .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      }
-    } catch(e) { R.iem_error = e.message; }
+    // Get header cells
+    const headers = [...html.matchAll(/<th[^>]*>([\s\S]*?)<\/th>/gi)]
+      .map(m => m[1].replace(/<[^>]+>/g, '').replace(/&[^;]+;/g, ' ').trim())
+      .filter(h => h.length > 0 && h.length < 30);
+    R.headers = headers.slice(0, 15);
+
+    // Sample the raw HTML around table
+    const tIdx = Math.max(tableIdx, tableIdx2);
+    if (tIdx > -1) R.table_sample = html.slice(tIdx, tIdx + 1000);
 
   } catch(e) { R.error = e.message; }
 
