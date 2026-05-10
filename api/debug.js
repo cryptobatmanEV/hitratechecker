@@ -1,76 +1,49 @@
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  const KEY = process.env.FACEIT_API_KEY;
-  const BASE = 'https://open.faceit.com/data/v4';
   const R = {};
+  const HEADERS = {
+    'User-Agent': 'EV Cave Hit Rate Tool/1.0 (contact@theevcave.com)',
+    'Accept': 'application/json'
+  };
 
-  // 1. Browse FACEIT championships directly (not by name search)
+  // 1. Liquipedia Data API v3 - player lookup
   try {
-    const r = await fetch(`${BASE}/championships?game=cs2&type=recent&offset=0&limit=10`, {
-      headers: { Authorization: `Bearer ${KEY}` }
-    });
-    const d = await r.json();
-    R.faceit_championships_browse = (d.items || []).map(c => ({
-      id: c.championship_id,
-      name: c.name,
-      status: c.status,
-      organizer: c.organizer_id
-    }));
-  } catch(e) { R.faceit_browse_error = e.message; }
+    const r = await fetch('https://api.liquipedia.net/api/v3/player?wiki=counterstrike&name=dgt&limit=1', { headers: HEADERS });
+    const text = await r.text();
+    R.lp_player = { status: r.status, preview: text.slice(0, 400) };
+  } catch(e) { R.lp_player_error = e.message; }
 
-  // 2. Liquipedia CS2 API - get dgt's recent matches with stats
+  // 2. Liquipedia Data API v3 - match results for FURIA
   try {
-    const r = await fetch(
-      'https://liquipedia.net/counterstrike/api.php?action=ask&format=json&query=[[Player::dgt]]|?Kills|?Deaths|?Assists|?Team|limit=5',
-      { headers: { 'User-Agent': 'EV Cave Hit Rate Tool/1.0 (contact@theevcave.com)' } }
-    );
-    const d = await r.json();
-    R.liquipedia_player = { status: r.status, results: Object.keys(d.query?.results || {}).slice(0, 3) };
-  } catch(e) { R.liquipedia_error = e.message; }
+    const r = await fetch('https://api.liquipedia.net/api/v3/match?wiki=counterstrike&opponent=FURIA&limit=3', { headers: HEADERS });
+    const text = await r.text();
+    R.lp_matches = { status: r.status, preview: text.slice(0, 400) };
+  } catch(e) { R.lp_matches_error = e.message; }
 
-  // 3. Liquipedia parse API - get match stats from a specific page
+  // 3. Liquipedia Data API v3 - placements/tournament results
   try {
-    const r = await fetch(
-      'https://liquipedia.net/counterstrike/api.php?action=parse&page=FURIA_Esports&format=json&prop=sections',
-      { headers: { 'User-Agent': 'EV Cave Hit Rate Tool/1.0 (contact@theevcave.com)' } }
-    );
-    R.liquipedia_parse_status = r.status;
+    const r = await fetch('https://api.liquipedia.net/api/v3/placement?wiki=counterstrike&player=dgt&limit=5', { headers: HEADERS });
+    const text = await r.text();
+    R.lp_placements = { status: r.status, preview: text.slice(0, 400) };
+  } catch(e) { R.lp_placements_error = e.message; }
+
+  // 4. MediaWiki API - try fetching dgt player page content directly
+  try {
+    const r = await fetch('https://liquipedia.net/counterstrike/api.php?action=parse&page=Dgt&prop=wikitext&format=json', { headers: HEADERS });
     if (r.ok) {
       const d = await r.json();
-      R.liquipedia_parse = { title: d.parse?.title, sections: d.parse?.sections?.length };
+      const wikitext = d.parse?.wikitext?.['*'] || '';
+      // Look for stats patterns like | kills = or similar
+      R.lp_dgt_page = {
+        status: r.status,
+        page_exists: !!d.parse?.title,
+        title: d.parse?.title,
+        wikitext_sample: wikitext.slice(0, 600)
+      };
     } else {
-      R.liquipedia_parse_error = await r.text().then(t => t.slice(0, 200));
+      R.lp_dgt_page = { status: r.status };
     }
-  } catch(e) { R.liquipedia_parse_error = e.message; }
-
-  // 4. SportDevs - test CS2 endpoint
-  try {
-    const r = await fetch('https://esports.sportdevs.com/matches?sport_id=eq.cs2&limit=3', {
-      headers: { 'Accept': 'application/json' }
-    });
-    R.sportdevs = { status: r.status, preview: (await r.text()).slice(0, 300) };
-  } catch(e) { R.sportdevs_error = e.message; }
-
-  // 5. Try FACEIT open data endpoint for ESL org
-  try {
-    const r = await fetch(`${BASE}/organizers/search?name=ESL&offset=0&limit=5`, {
-      headers: { Authorization: `Bearer ${KEY}` }
-    });
-    const d = await r.json();
-    R.esl_organizer = (d.items || []).map(o => ({ id: o.organizer_id, name: o.name }));
-  } catch(e) { R.esl_org_error = e.message; }
-
-  // 6. If ESL organizer found, get their championships
-  if (R.esl_organizer?.length) {
-    try {
-      const orgId = R.esl_organizer[0].id;
-      const r = await fetch(`${BASE}/organizers/${orgId}/championships?game=cs2&limit=5`, {
-        headers: { Authorization: `Bearer ${KEY}` }
-      });
-      const d = await r.json();
-      R.esl_championships_via_org = (d.items || []).map(c => ({ id: c.championship_id, name: c.name, status: c.status }));
-    } catch(e) { R.esl_org_champ_error = e.message; }
-  }
+  } catch(e) { R.lp_dgt_error = e.message; }
 
   return res.status(200).json(R);
 }
