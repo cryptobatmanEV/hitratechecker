@@ -1,28 +1,29 @@
 export const config = { maxDuration: 30 };
 const SCRAPER_KEY = process.env.SCRAPER_API_KEY;
 
+async function scraperFetch(url, js = false) {
+  const r = await fetch(
+    `https://api.scraperapi.com?api_key=${SCRAPER_KEY}&url=${encodeURIComponent(url)}${js ? '&render=true' : ''}`,
+    { headers: { Accept: 'text/html' } }
+  );
+  if (!r.ok) throw new Error(`ScraperAPI ${r.status}`);
+  return r.text();
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  const results = {};
+  const { q = 'TenZ' } = req.query;
 
-  // Test 1: render=false (current approach)
   try {
-    const r = await fetch(`https://api.scraperapi.com?api_key=${SCRAPER_KEY}&url=${encodeURIComponent('https://www.hltv.org/stats/players/matches/20462/story?startDate=2025-01-01&endDate=2026-05-12')}&render=false`);
-    results.render_false = { status: r.status, ok: r.ok, length: (await r.text()).length };
-  } catch(e) { results.render_false = { error: e.message }; }
-
-  // Test 2: render=true (JS rendering)
-  try {
-    const r = await fetch(`https://api.scraperapi.com?api_key=${SCRAPER_KEY}&url=${encodeURIComponent('https://www.hltv.org/stats/players/matches/20462/story?startDate=2025-01-01&endDate=2026-05-12')}&render=true`);
-    const text = await r.text();
-    results.render_true = { status: r.status, ok: r.ok, length: text.length, hasTable: text.includes('stats-matches-table') };
-  } catch(e) { results.render_true = { error: e.message }; }
-
-  // Test 3: country_code=us
-  try {
-    const r = await fetch(`https://api.scraperapi.com?api_key=${SCRAPER_KEY}&url=${encodeURIComponent('https://www.hltv.org/stats/players/matches/20462/story?startDate=2025-01-01&endDate=2026-05-12')}&render=false&country_code=us`);
-    results.country_us = { status: r.status, ok: r.ok, length: (await r.text()).length };
-  } catch(e) { results.country_us = { error: e.message }; }
-
-  return res.json(results);
+    const html = await scraperFetch(`https://www.hltv.org/search?query=${encodeURIComponent(q)}`, true);
+    const results = [];
+    const rx = /href="\/player\/(\d+)\/([^"?#]+)"/gi;
+    let m; const seen = new Set();
+    while ((m = rx.exec(html)) !== null) {
+      if (!seen.has(m[1])) { seen.add(m[1]); results.push({ id: m[1], slug: m[2] }); }
+    }
+    return res.json({ q, credits_used: 5, results, html_length: html.length });
+  } catch(e) {
+    return res.json({ error: e.message, credits_remaining_check: 'Go to scraperapi.com dashboard' });
+  }
 }
