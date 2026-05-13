@@ -4,7 +4,6 @@ const SCRAPER_KEY = process.env.SCRAPER_API_KEY;
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  // Fetch without contextIds — pure match stats page
   const url = 'https://www.hltv.org/stats/matches/mapstatsid/228816/5star-vs-flyquest';
   const r = await fetch(
     `https://api.scraperapi.com?api_key=${SCRAPER_KEY}&url=${encodeURIComponent(url)}&render=false`,
@@ -12,14 +11,17 @@ export default async function handler(req, res) {
   );
   const html = await r.text();
 
-  // Look for hs/headshot patterns
-  const patterns = {
-    kd_hs: (html.match(/\d+\s*\(\d+\)/g) || []).slice(0, 10),
-    headshot_word: html.toLowerCase().includes('headshot'),
-    hs_class: (html.match(/class="[^"]*hs[^"]*"/gi) || []).slice(0, 5),
-    story_row: (html.match(/story[\s\S]{0,400}/i) || ['not found'])[0].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 300),
-    table_classes: (html.match(/class="[^"]*stats[^"]*table[^"]*"/gi) || []).slice(0, 5),
-  };
+  // Find all st- prefixed classes
+  const stClasses = [...new Set((html.match(/class="st-[^"]+"/gi) || []))].slice(0, 20);
 
-  return res.json({ status: r.status, html_length: html.length, patterns });
+  // Find headshot context  
+  const hsIdx = html.toLowerCase().indexOf('headshot');
+  const hsContext = html.slice(Math.max(0, hsIdx - 200), hsIdx + 400).replace(/\s+/g, ' ');
+
+  // Get story's full row raw HTML from the totalstats table
+  const tableM = html.match(/<table[^>]*totalstats[^>]*>([\s\S]*?)<\/table>/i);
+  const storyRowM = tableM?.[1].match(/story[\s\S]{0,600}/i);
+  const storyRaw = storyRowM?.[0].slice(0, 600);
+
+  return res.json({ st_classes: stClasses, headshot_context: hsContext, story_raw: storyRaw });
 }
