@@ -11,17 +11,22 @@ export default async function handler(req, res) {
   );
   const html = await r.text();
 
-  // Find all st- prefixed classes
-  const stClasses = [...new Set((html.match(/class="st-[^"]+"/gi) || []))].slice(0, 20);
-
-  // Find headshot context  
-  const hsIdx = html.toLowerCase().indexOf('headshot');
-  const hsContext = html.slice(Math.max(0, hsIdx - 200), hsIdx + 400).replace(/\s+/g, ' ');
-
-  // Get story's full row raw HTML from the totalstats table
+  // Find the totalstats table and get the raw kills cell for story
   const tableM = html.match(/<table[^>]*totalstats[^>]*>([\s\S]*?)<\/table>/i);
-  const storyRowM = tableM?.[1].match(/story[\s\S]{0,600}/i);
-  const storyRaw = storyRowM?.[0].slice(0, 600);
+  if (!tableM) return res.json({ error: 'no table' });
 
-  return res.json({ st_classes: stClasses, headshot_context: hsContext, story_raw: storyRaw });
+  // Find story's row in the table
+  const storyRowStart = tableM[1].toLowerCase().indexOf('story');
+  if (storyRowStart === -1) return res.json({ error: 'story not in table' });
+
+  // Get surrounding row HTML (500 chars before and after name)
+  const rowChunk = tableM[1].slice(Math.max(0, storyRowStart - 300), storyRowStart + 600);
+
+  // Find all st-kills cells in the whole table
+  const killsCells = (tableM[1].match(/<td class="st-kills[^"]*"[^>]*>([\s\S]*?)<\/td>/gi) || []).slice(0, 6);
+
+  return res.json({
+    story_row_chunk: rowChunk,
+    kills_cells_sample: killsCells,
+  });
 }
