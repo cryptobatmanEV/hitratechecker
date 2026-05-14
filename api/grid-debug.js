@@ -1,25 +1,10 @@
 export const config = { maxDuration: 30 };
 const KEY   = process.env.GRID_API_KEY;
-const CD    = 'https://api-op.grid.gg/central-data/graphql';
 const STATS = 'https://api-op.grid.gg/statistics-feed/graphql';
 const delay = ms => new Promise(r => setTimeout(r, ms));
-
-async function qStats(query) {
-  await delay(1500);
-  const r = await fetch(STATS, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': KEY },
-    body: JSON.stringify({ query }),
-  });
-  return r.json();
-}
-async function qCD(query) {
-  await delay(500);
-  const r = await fetch(CD, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': KEY },
-    body: JSON.stringify({ query }),
-  });
+async function qStats(q) {
+  await delay(2000);
+  const r = await fetch(STATS, { method:'POST', headers:{'Content-Type':'application/json','x-api-key':KEY}, body:JSON.stringify({query:q}) });
   return r.json();
 }
 
@@ -27,45 +12,68 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const results = {};
 
-  // 1. Get tournament ID for IEM Rio 2026 so we can query stats
-  try {
-    const d = await qCD(`{
-      tournaments(filter: { name: { contains: "IEM Rio 2026" }, title: { id: { in: ["28"] } } }, first: 5) {
-        edges { node { id name startDate endDate } }
-      }
-    }`);
-    results.iemRioTournaments = d;
-  } catch(e) { results.iemRioTournaments = { error: e.message }; }
-
-  // 2. Check playerStatistics query arguments
+  // 1. NiKo stats for IEM Rio 2026 Playoffs (tournament 829250)
+  // Series 2931340 started at 2026-04-19T13:30:00Z
   try {
     const d = await qStats(`{
-      __type(name: "Query") {
-        fields(includeDeprecated: true) {
-          name
-          args { name type { name kind ofType { name } } }
+      playerStatistics(playerId: "112182", filter: { tournamentIds: { in: ["829250"] } }) {
+        id
+        aggregationSeriesIds
+        series { 
+          count 
+          kills { avg sum min max }
+          deaths { avg sum }
+        }
+        game { count kills { avg sum min max } deaths { avg } }
+        segment {
+          ... on Cs2PlayerSeriesStatistics {
+            count
+            kills { avg sum min max }
+            deaths { avg sum }
+            headshots { avg sum min max }
+          }
         }
       }
     }`);
-    const psField = d?.data?.__type?.fields?.find(f => f.name === 'playerStatistics');
-    results.playerStatisticsArgs = psField?.args;
-  } catch(e) { results.playerStatisticsArgs = { error: e.message }; }
+    results.nikoIemRioPlayoffs = d;
+  } catch(e) { results.nikoIemRioPlayoffs = { error: e.message }; }
 
-  // 3. Check PlayerStatisticsFilter — can we filter by seriesIds?
-  try {
-    const d = await qStats(`{ __type(name: "PlayerStatisticsFilter") { inputFields { name type { name kind ofType { name } } } } }`);
-    results.playerStatisticsFilter = d?.data?.__type?.inputFields?.map(f => f.name);
-  } catch(e) { results.playerStatisticsFilter = { error: e.message }; }
-
-  // 4. Check Cs2PlayerSeriesStatistics headshots structure
+  // 2. Test startedAt filter — isolate single series (IEM Rio series started 2026-04-19T13:30:00Z)
   try {
     const d = await qStats(`{
-      __type(name: "Cs2PlayerSeriesStatistics") { 
-        fields { name type { name kind ofType { name } } } 
+      playerStatistics(playerId: "112182", filter: { 
+        startedAt: { gte: "2026-04-19T00:00:00Z", lte: "2026-04-20T00:00:00Z" }
+      }) {
+        id
+        aggregationSeriesIds
+        segment {
+          ... on Cs2PlayerSeriesStatistics {
+            count
+            kills { avg sum }
+            deaths { avg sum }
+            headshots { avg sum }
+          }
+        }
       }
     }`);
-    results.cs2PlayerSeriesStatsDetailed = d?.data?.__type?.fields;
-  } catch(e) { results.cs2PlayerSeriesStatsDetailed = { error: e.message }; }
+    results.nikoSingleSeries = d;
+  } catch(e) { results.nikoSingleSeries = { error: e.message }; }
+
+  // 3. Try full IEM Rio (parent 829191) to get more series
+  try {
+    const d = await qStats(`{
+      playerStatistics(playerId: "112182", filter: { tournamentIds: { in: ["829191","829241","829250"] } }) {
+        id
+        aggregationSeriesIds
+        segment {
+          ... on Cs2PlayerSeriesStatistics {
+            count kills { avg sum min max } deaths { avg } headshots { avg sum }
+          }
+        }
+      }
+    }`);
+    results.nikoFullIemRio = d;
+  } catch(e) { results.nikoFullIemRio = { error: e.message }; }
 
   return res.json({ results });
 }
