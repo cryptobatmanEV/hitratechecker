@@ -1,13 +1,13 @@
 export const config = { maxDuration: 30 };
 const KEY = process.env.GRID_API_KEY;
-const CD_URL    = 'https://api-op.grid.gg/central-data/graphql';
-const STATS_URL = 'https://api-op.grid.gg/statistics-feed/graphql';
+const CD    = 'https://api-op.grid.gg/central-data/graphql';
+const STATS = 'https://api-op.grid.gg/statistics-feed/graphql';
 
-async function query(url, q) {
+async function q(url, query) {
   const r = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': KEY },
-    body: JSON.stringify({ query: q }),
+    body: JSON.stringify({ query }),
   });
   return r.json();
 }
@@ -16,46 +16,51 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const results = {};
 
-  // 1. Player search on OPEN ACCESS URL
+  // 1. Find CS2 title ID
   try {
-    const d = await query(CD_URL, `{
-      players(filter: { nickname: { contains: "NiKo" } }, first: 3) {
-        edges { node { id nickname team { name } title { name } } }
+    const d = await q(CD, `{ titles { id name nameShortened } }`);
+    results.titles = d;
+  } catch(e) { results.titles = { error: e.message }; }
+
+  // 2. Find NiKo's CS2 player ID (filter by titleId once we know it)
+  // For now search by nickname + check title
+  try {
+    const d = await q(CD, `{
+      players(filter: { nickname: { equals: "NiKo" } }, first: 5) {
+        edges { node { id nickname title { id name } team { name } } }
       }
     }`);
-    results.playerSearch = d;
-  } catch(e) { results.playerSearch = { error: e.message }; }
+    results.nikoAllTitles = d;
+  } catch(e) { results.nikoAllTitles = { error: e.message }; }
 
-  // 2. Get all CS2 series (open access URL)
+  // 3. Introspect seriesStatistics type
   try {
-    const d = await query(CD_URL, `{
-      allSeries(first: 2, orderBy: StartTimeScheduled, orderDirection: DESC,
-        filter: { types: [ESPORTS] }
-      ) {
-        edges { node { id startTimeScheduled title { name } 
-          teams { baseInfo { name } }
-          players { id nickname }
-        }}
+    const d = await q(STATS, `{
+      __type(name: "SeriesStatistics") { fields { name } }
+    }`);
+    results.seriesStatsFields = d?.data?.__type?.fields?.map(f => f.name);
+  } catch(e) { results.seriesStatsFields = { error: e.message }; }
+
+  // 4. Introspect gameStatistics type
+  try {
+    const d = await q(STATS, `{
+      __type(name: "GameStatistics") { fields { name } }
+    }`);
+    results.gameStatsFields = d?.data?.__type?.fields?.map(f => f.name);
+  } catch(e) { results.gameStatsFields = { error: e.message }; }
+
+  // 5. Try playerStatistics with NiKo ID 7190
+  try {
+    const d = await q(STATS, `{
+      playerStatistics(playerId: "7190", filter: { timeWindow: LAST_3_MONTHS }) {
+        id
+        aggregationSeriesIds
+        series { count kills { avg sum min max } deaths { avg } headshots { avg } }
+        game { count kills { avg sum min max } deaths { avg } headshots { avg } }
       }
     }`);
-    results.recentSeries = d;
-  } catch(e) { results.recentSeries = { error: e.message }; }
-
-  // 3. Test Stats Feed - introspect what's available
-  try {
-    const d = await query(STATS_URL, `{
-      __type(name: "Query") { fields { name } }
-    }`);
-    results.statsFeedQueries = d?.data?.__type?.fields?.map(f => f.name);
-  } catch(e) { results.statsFeedQueries = { error: e.message }; }
-
-  // 4. Try playerStatistics on stats feed
-  try {
-    const d = await query(STATS_URL, `{
-      __type(name: "PlayerStatistics") { fields { name } }
-    }`);
-    results.playerStatsFields = d?.data?.__type?.fields?.map(f => f.name);
-  } catch(e) { results.playerStatsFields = { error: e.message }; }
+    results.nikoStats = d;
+  } catch(e) { results.nikoStats = { error: e.message }; }
 
   return res.json({ results });
 }
