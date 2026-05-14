@@ -13,8 +13,8 @@ async function qStats(query) {
   });
   return r.json();
 }
-
 async function qCD(query) {
+  await delay(500);
   const r = await fetch(CD, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': KEY },
@@ -27,44 +27,45 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const results = {};
 
-  // Check all CS2-specific stat types for headshots
-  const cs2Types = [
-    'Cs2PlayerSeriesStatistics',
-    'PlayerGameStatisticsCs2',
-    'PlayerSegmentStatisticsCs2',
-    'Cs2TeamSeriesStatistics',
-    'TeamGameStatisticsCs2',
-    'TeamSegmentStatisticsCs2',
-    'GameTeamsStatisticsByGameCs2',
-    'GameStatisticsByGame',
-    'TeamPlayersStatisticsByGame',
-  ];
-
-  for (const type of cs2Types) {
-    try {
-      const d = await qStats(`{ __type(name: "${type}") { fields { name } } }`);
-      const fields = d?.data?.__type?.fields?.map(f => f.name) || [];
-      results[type] = {
-        hasHeadshots: fields.includes('headshots'),
-        fields,
-      };
-    } catch(e) { results[type] = { error: e.message }; }
-  }
-
-  // Get Team Falcons recent CS2 series IDs
+  // 1. Get tournament ID for IEM Rio 2026 so we can query stats
   try {
     const d = await qCD(`{
-      allSeries(
-        first: 5
-        orderBy: StartTimeScheduled
-        orderDirection: DESC
-        filter: { teamIds: { in: ["51967"] } titleIds: { in: ["28"] } }
-      ) {
-        edges { node { id startTimeScheduled tournament { name } teams { baseInfo { name } } } }
+      tournaments(filter: { name: { contains: "IEM Rio 2026" }, title: { id: { in: ["28"] } } }, first: 5) {
+        edges { node { id name startDate endDate } }
       }
     }`);
-    results.falconsSeries = d;
-  } catch(e) { results.falconsSeries = { error: e.message }; }
+    results.iemRioTournaments = d;
+  } catch(e) { results.iemRioTournaments = { error: e.message }; }
+
+  // 2. Check playerStatistics query arguments
+  try {
+    const d = await qStats(`{
+      __type(name: "Query") {
+        fields(includeDeprecated: true) {
+          name
+          args { name type { name kind ofType { name } } }
+        }
+      }
+    }`);
+    const psField = d?.data?.__type?.fields?.find(f => f.name === 'playerStatistics');
+    results.playerStatisticsArgs = psField?.args;
+  } catch(e) { results.playerStatisticsArgs = { error: e.message }; }
+
+  // 3. Check PlayerStatisticsFilter — can we filter by seriesIds?
+  try {
+    const d = await qStats(`{ __type(name: "PlayerStatisticsFilter") { inputFields { name type { name kind ofType { name } } } } }`);
+    results.playerStatisticsFilter = d?.data?.__type?.inputFields?.map(f => f.name);
+  } catch(e) { results.playerStatisticsFilter = { error: e.message }; }
+
+  // 4. Check Cs2PlayerSeriesStatistics headshots structure
+  try {
+    const d = await qStats(`{
+      __type(name: "Cs2PlayerSeriesStatistics") { 
+        fields { name type { name kind ofType { name } } } 
+      }
+    }`);
+    results.cs2PlayerSeriesStatsDetailed = d?.data?.__type?.fields;
+  } catch(e) { results.cs2PlayerSeriesStatsDetailed = { error: e.message }; }
 
   return res.json({ results });
 }
