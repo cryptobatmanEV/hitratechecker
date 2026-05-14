@@ -291,15 +291,17 @@ export default async function handler(req, res) {
         }
         const { games: rawMaps } = parseHLTVMatches(html);
         if (!rawMaps.length) return res.status(404).json({ error: `No match data found for ${hltvSlug}.` });
-        // Only fetch headshots when stat=headshots — saves 10 credits for all other stat lookups
+        // Only fetch headshots when stat=headshots — saves credits for all other stat lookups
         if (isHS) {
-          const mapsForHS = rawMaps.filter(m => m._matchUrl).slice(0, 10);
-          if (mapsForHS.length > 0) {
-            const hsResults = await Promise.all(
-              mapsForHS.map(m => fetchMatchHeadshots(m._matchUrl, hltvSlug))
-            );
-            mapsForHS.forEach((m, i) => { m.headshots = hsResults[i]; });
-          }
+          try {
+            const mapsForHS = rawMaps.filter(m => m._matchUrl).slice(0, 5);
+            if (mapsForHS.length > 0) {
+              const hsResults = await Promise.all(
+                mapsForHS.map(m => fetchMatchHeadshots(m._matchUrl, hltvSlug))
+              );
+              mapsForHS.forEach((m, i) => { m.headshots = hsResults[i]; });
+            }
+          } catch(e) { /* HS fetch failed — return games with 0 headshots */ }
         }
         const games = groupIntoSeries(rawMaps).slice(0, 40);
         gameCache.set(cacheKey, games);
