@@ -14,47 +14,44 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const results = {};
 
-  // 1. What operators does StringFilter support?
+  // 1. Find NiKo using correct filter
   try {
     const d = await gridQuery(`{
-      __type(name: "StringFilter") { inputFields { name } }
-    }`);
-    results.stringFilterOps = d?.data?.__type?.inputFields?.map(f => f.name);
-  } catch(e) { results.stringFilterOps = { error: e.message }; }
-
-  // 2. What fields does Tournament have?
-  try {
-    const d = await gridQuery(`{
-      __type(name: "Tournament") { fields { name type { name kind ofType { name } } } }
-    }`);
-    results.tournamentType = d?.data?.__type?.fields?.map(f => f.name);
-  } catch(e) { results.tournamentType = { error: e.message }; }
-
-  // 3. What fields does Series have?
-  try {
-    const d = await gridQuery(`{
-      __type(name: "Series") { fields { name type { name kind ofType { name } } } }
-    }`);
-    results.seriesType = d?.data?.__type?.fields?.map(f => f.name);
-  } catch(e) { results.seriesType = { error: e.message }; }
-
-  // 4. What fields does Game have? (maps in CS2)
-  try {
-    const d = await gridQuery(`{
-      __type(name: "Game") { fields { name type { name kind ofType { name } } } }
-    }`);
-    results.gameType = d?.data?.__type?.fields?.map(f => f.name);
-  } catch(e) { results.gameType = { error: e.message }; }
-
-  // 5. Try a player search with different filter
-  try {
-    const d = await gridQuery(`{
-      players(filter: { nickname: { equalTo: "NiKo" } }, first: 1) {
+      players(filter: { nickname: { equals: "NiKo" } }, first: 1) {
         edges { node { id nickname team { name } title { name } } }
       }
     }`);
-    results.playerNiKo = d;
-  } catch(e) { results.playerNiKo = { error: e.message }; }
+    results.nikoPlayer = d;
+  } catch(e) { results.nikoPlayer = { error: e.message }; }
+
+  // 2. What type is SeriesPlayer/PlayerParticipant?
+  try {
+    const d = await gridQuery(`{
+      __type(name: "SeriesPlayer") { fields { name type { name kind ofType { name } } } }
+    }`);
+    results.seriesPlayerType = d?.data?.__type?.fields?.map(f => f.name);
+  } catch(e) { results.seriesPlayerType = { error: e.message }; }
+
+  // 3. Try PlayerParticipant type name
+  try {
+    const d = await gridQuery(`{
+      __type(name: "PlayerParticipant") { fields { name } }
+    }`);
+    results.playerParticipantType = d?.data?.__type?.fields?.map(f => f.name);
+  } catch(e) { results.playerParticipantType = { error: e.message }; }
+
+  // 4. Check all types in schema that contain "Player" or "Stat"
+  try {
+    const d = await gridQuery(`{
+      __schema {
+        types { name kind }
+      }
+    }`);
+    const types = d?.data?.__schema?.types?.map(t => t.name) || [];
+    results.relevantTypes = types.filter(t => 
+      t.includes('Player') || t.includes('Stat') || t.includes('Game') || t.includes('Kill') || t.includes('Map')
+    );
+  } catch(e) { results.relevantTypes = { error: e.message }; }
 
   return res.json({ results });
 }
