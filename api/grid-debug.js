@@ -1,11 +1,13 @@
 export const config = { maxDuration: 30 };
-const GRID_URL = 'https://api.grid.gg/central-data/graphql';
 const KEY = process.env.GRID_API_KEY;
-async function gridQuery(query) {
-  const r = await fetch(GRID_URL, {
+const CD_URL    = 'https://api-op.grid.gg/central-data/graphql';
+const STATS_URL = 'https://api-op.grid.gg/statistics-feed/graphql';
+
+async function query(url, q) {
+  const r = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': KEY },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query: q }),
   });
   return r.json();
 }
@@ -14,44 +16,46 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const results = {};
 
-  // 1. Find NiKo using correct filter
+  // 1. Player search on OPEN ACCESS URL
   try {
-    const d = await gridQuery(`{
-      players(filter: { nickname: { equals: "NiKo" } }, first: 1) {
+    const d = await query(CD_URL, `{
+      players(filter: { nickname: { contains: "NiKo" } }, first: 3) {
         edges { node { id nickname team { name } title { name } } }
       }
     }`);
-    results.nikoPlayer = d;
-  } catch(e) { results.nikoPlayer = { error: e.message }; }
+    results.playerSearch = d;
+  } catch(e) { results.playerSearch = { error: e.message }; }
 
-  // 2. What type is SeriesPlayer/PlayerParticipant?
+  // 2. Get all CS2 series (open access URL)
   try {
-    const d = await gridQuery(`{
-      __type(name: "SeriesPlayer") { fields { name type { name kind ofType { name } } } }
-    }`);
-    results.seriesPlayerType = d?.data?.__type?.fields?.map(f => f.name);
-  } catch(e) { results.seriesPlayerType = { error: e.message }; }
-
-  // 3. Try PlayerParticipant type name
-  try {
-    const d = await gridQuery(`{
-      __type(name: "PlayerParticipant") { fields { name } }
-    }`);
-    results.playerParticipantType = d?.data?.__type?.fields?.map(f => f.name);
-  } catch(e) { results.playerParticipantType = { error: e.message }; }
-
-  // 4. Check all types in schema that contain "Player" or "Stat"
-  try {
-    const d = await gridQuery(`{
-      __schema {
-        types { name kind }
+    const d = await query(CD_URL, `{
+      allSeries(first: 2, orderBy: StartTimeScheduled, orderDirection: DESC,
+        filter: { types: [ESPORTS] }
+      ) {
+        edges { node { id startTimeScheduled title { name } 
+          teams { baseInfo { name } }
+          players { id nickname }
+        }}
       }
     }`);
-    const types = d?.data?.__schema?.types?.map(t => t.name) || [];
-    results.relevantTypes = types.filter(t => 
-      t.includes('Player') || t.includes('Stat') || t.includes('Game') || t.includes('Kill') || t.includes('Map')
-    );
-  } catch(e) { results.relevantTypes = { error: e.message }; }
+    results.recentSeries = d;
+  } catch(e) { results.recentSeries = { error: e.message }; }
+
+  // 3. Test Stats Feed - introspect what's available
+  try {
+    const d = await query(STATS_URL, `{
+      __type(name: "Query") { fields { name } }
+    }`);
+    results.statsFeedQueries = d?.data?.__type?.fields?.map(f => f.name);
+  } catch(e) { results.statsFeedQueries = { error: e.message }; }
+
+  // 4. Try playerStatistics on stats feed
+  try {
+    const d = await query(STATS_URL, `{
+      __type(name: "PlayerStatistics") { fields { name } }
+    }`);
+    results.playerStatsFields = d?.data?.__type?.fields?.map(f => f.name);
+  } catch(e) { results.playerStatsFields = { error: e.message }; }
 
   return res.json({ results });
 }
