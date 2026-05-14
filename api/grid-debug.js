@@ -15,49 +15,72 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const results = {};
 
-  // 1. What fields does PlayerSeriesStatistics have?
+  // 1. Get NiKo's recent series using livePlayerIds filter
   try {
-    const d = await q(STATS, `{ __type(name: "PlayerSeriesStatistics") { fields { name } } }`);
-    results.playerSeriesStatsFields = d?.data?.__type?.fields?.map(f => f.name);
-  } catch(e) { results.playerSeriesStatsFields = { error: e.message }; }
+    const d = await q(CD, `{
+      allSeries(
+        first: 5
+        orderBy: StartTimeScheduled
+        orderDirection: DESC
+        filter: { 
+          livePlayerIds: { in: ["112182"] }
+          titleIds: { in: ["28"] }
+        }
+      ) {
+        edges { node { 
+          id startTimeScheduled 
+          tournament { id name }
+          teams { baseInfo { name } }
+        }}
+      }
+    }`);
+    results.nikoRecentSeries = d;
+  } catch(e) { results.nikoRecentSeries = { error: e.message }; }
 
-  // 2. What fields does PlayerGameStatistics have?
-  try {
-    const d = await q(STATS, `{ __type(name: "PlayerGameStatistics") { fields { name } } }`);
-    results.playerGameStatsFields = d?.data?.__type?.fields?.map(f => f.name);
-  } catch(e) { results.playerGameStatsFields = { error: e.message }; }
-
-  // 3. What does GameStatisticsResult look like (the individual game entries)?
-  try {
-    const d = await q(STATS, `{ __type(name: "GameStatisticsResult") { fields { name } } }`);
-    results.gameStatisticsResult = d?.data?.__type?.fields?.map(f => f.name);
-  } catch(e) { results.gameStatisticsResult = { error: e.message }; }
-
-  // 4. Try NiKo CS2 stats with correct fields
+  // 2. Try playerStatistics with tournamentIds (IEM Atlanta)
   try {
     const d = await q(STATS, `{
-      playerStatistics(playerId: "112182", filter: { timeWindow: LAST_3_MONTHS }) {
+      playerStatistics(playerId: "112182", filter: { tournamentIds: { in: ["828285", "828286"] } }) {
         id
         aggregationSeriesIds
-        series { count kills { avg sum min max } deaths { avg sum } }
+        series { count kills { avg sum min max } deaths { avg } }
         game { count kills { avg sum min max } deaths { avg } }
       }
     }`);
-    results.nikoCS2Stats = d;
-  } catch(e) { results.nikoCS2Stats = { error: e.message }; }
+    results.nikoTournamentStats = d;
+  } catch(e) { results.nikoTournamentStats = { error: e.message }; }
 
-  // 5. Get recent CS2 tournaments so we can use tournamentIds filter
+  // 3. Introspect SeriesStatistics.games type to see if it's individual entries
+  try {
+    const d = await q(STATS, `{
+      __type(name: "SeriesStatistics") { fields { name type { name kind ofType { name kind } } } }
+    }`);
+    results.seriesStatsType = d?.data?.__type?.fields;
+  } catch(e) { results.seriesStatsType = { error: e.message }; }
+
+  // 4. Introspect GameStatisticsResult type
+  try {
+    const d = await q(STATS, `{
+      __type(name: "GameStatisticsResult") { fields { name type { name kind ofType { name } } } }
+    }`);
+    results.gameStatResultType = d?.data?.__type?.fields?.map(f => f.name);
+  } catch(e) { results.gameStatResultType = { error: e.message }; }
+
+  // 5. Get more recent CS2 tournaments (bigger ones)
   try {
     const d = await q(CD, `{
       tournaments(
-        filter: { title: { id: { in: ["28"] } }, startDate: { gte: "2025-01-01" } }
-        first: 5
+        filter: { 
+          title: { id: { in: ["28"] } }
+          startDate: { gte: "2025-10-01" }
+        }
+        first: 10
       ) {
         edges { node { id name startDate endDate } }
       }
     }`);
-    results.recentCS2Tournaments = d;
-  } catch(e) { results.recentCS2Tournaments = { error: e.message }; }
+    results.bigCS2Tournaments = d;
+  } catch(e) { results.bigCS2Tournaments = { error: e.message }; }
 
   return res.json({ results });
 }
