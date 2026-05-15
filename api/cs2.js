@@ -76,7 +76,7 @@ async function getPlayerIdMap() {
     `https://www.hltv.org/stats/players?startDate=${start}&endDate=${end}`
   );
   const map = {};
-  const rx = /href="\/stats\/players\/(\d+)\/([^"?#\/]+)"/gi; let m;
+  const rx = /href="\/stats\/players\/(\d+)\/([^"?#\/]+)/gi; let m;
   while((m=rx.exec(html))!==null) { map[m[2].toLowerCase()] = {id:m[1],slug:m[2]}; }
   if (Object.keys(map).length > 5) {
     try {
