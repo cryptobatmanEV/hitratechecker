@@ -7,38 +7,47 @@ export default async function handler(req,res){
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // 1. Introspect SeriesStatisticsFilter and GameStatisticsFilter fields
+  // 1. Introspect tournament filter types + return types
   const schema = await stQ(`{
     __schema { types {
       name
       inputFields { name type { name kind ofType { name kind } } }
+      fields { name type { name kind ofType { name kind ofType { name kind } } } }
     }}
   }`);
   const types = schema?.data?.__schema?.types || [];
   for (const t of types) {
-    if (['SeriesStatisticsFilter','GameStatisticsFilter','GameSelection'].includes(t.name)) {
-      out[t.name] = t.inputFields?.map(f => ({
-        name: f.name,
-        type: f.type?.name || f.type?.ofType?.name || f.type?.kind
-      }));
+    if ([
+      'SeriesStatisticsTournamentFilter',
+      'GameStatisticsTournamentFilter',
+      'SeriesStatistics',
+      'GameStatistics',
+      'CsgoSeriesStatistics',
+      'CsgoGameStatistics',
+      'DateTimeFilter'
+    ].includes(t.name)) {
+      out[t.name] = {
+        inputFields: t.inputFields?.map(f => f.name),
+        fields: t.fields?.map(f => f.name)
+      };
     }
   }
 
-  // 2. Test seriesStatistics with playerId filter (NiKo CS:GO ID 7190)
+  // 2. Test seriesStatistics with tournament filter (IEM Rio 2026 Playoffs = 829250)
   const r2 = await stQ(`{
-    seriesStatistics(titleId:"1", filter:{playerId:"7190"}) {
+    seriesStatistics(titleId:"1", filter:{tournament:{id:"829250"}}) {
       __typename
     }
   }`);
-  out.seriesStats_byPlayer = r2?.data || r2?.errors?.[0]?.message;
+  out.seriesStats_tournament = r2?.data || r2?.errors?.[0]?.message;
 
-  // 3. Test seriesStatistics with seriesId filter
+  // 3. Test gameStatistics with tournament filter
   const r3 = await stQ(`{
-    seriesStatistics(titleId:"1", filter:{seriesId:"2931340"}) {
+    gameStatistics(titleId:"1", filter:{tournament:{id:"829250"}}) {
       __typename
     }
   }`);
-  out.seriesStats_bySeriesId = r3?.data || r3?.errors?.[0]?.message;
+  out.gameStats_tournament = r3?.data || r3?.errors?.[0]?.message;
 
   return res.json(out);
 }
