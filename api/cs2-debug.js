@@ -9,27 +9,27 @@ export default async function handler(req,res){
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // 1. NiKo LAST_MONTH - does he have recent stats? (confirms if issue is Techno or GRID broadly)
-  const r1 = await stQ(`{ playerStatistics(playerId:"7190",filter:{timeWindow:LAST_MONTH}){ aggregationSeriesIds series{count kills{sum}} } }`);
-  out.niko_last_month = { count: r1?.data?.playerStatistics?.series?.count, ids: r1?.data?.playerStatistics?.aggregationSeriesIds?.length, error: r1?.errors?.[0]?.message };
+  // 1. Get The MongolZ actual team ID from Techno's CS2 profile
+  const r1 = await cdQ(`{ players(filter:{nickname:{equals:"Techno"}},first:5){ edges{ node{ id nickname title{id} team{id name} } } } }`);
+  out.techno_profiles = r1?.data?.players?.edges?.map(e=>e.node);
 
-  // 2. Get SeriesOrderBy enum values
-  const schema = await stQ(`{ __schema { types { name enumValues { name } } } }`);
-  const types = schema?.data?.__schema?.types || [];
-  const sob = types.find(t => t.name === 'SeriesOrderBy');
-  const cdSchema = await cdQ(`{ __schema { types { name enumValues { name } } } }`);
-  const cdTypes = cdSchema?.data?.__schema?.types || [];
-  const cdSob = cdTypes.find(t => t.name === 'SeriesOrder' || t.name === 'SeriesOrderBy');
-  out.SeriesOrderBy_stats = sob?.enumValues?.map(e=>e.name);
-  out.SeriesOrder_cd = cdSob?.enumValues?.map(e=>e.name);
+  // 2. What tournaments does GRID have for 2026? (BLAST, ESL, IEM)
+  const r2 = await cdQ(`{ tournaments(filter:{name:{contains:"BLAST"}},first:5){ edges{ node{id name startDate} } } }`);
+  out.blast_tournaments = r2?.data?.tournaments?.edges?.map(e=>e.node) || r2?.errors;
 
-  // 3. Check if PGL Bucharest 2026 exists in GRID CD
-  const r3 = await cdQ(`{ tournaments(filter:{name:{contains:"PGL"}},first:10){ edges{ node{id name startDate} } } }`);
-  out.pgl_tournaments = r3?.data?.tournaments?.edges?.map(e=>e.node) || r3?.errors;
+  const r3 = await cdQ(`{ tournaments(filter:{name:{contains:"IEM"}},first:5){ edges{ node{id name startDate} } } }`);
+  out.iem_tournaments = r3?.data?.tournaments?.edges?.map(e=>e.node) || r3?.errors;
 
-  // 4. allSeries for MongolZ without orderBy to see what we get
-  const r4 = await cdQ(`{ allSeries(filter:{teamIds:{in:["51967"]}},first:5){ edges{ node{id startTimeScheduled tournament{id name} teams{baseInfo{name}}} } } }`);
-  out.allSeries_mongolz = r4?.data || r4?.errors;
+  // 3. What's in Techno's aggregationSeriesIds - get LAST_YEAR to see what tournaments they're from
+  const r4 = await stQ(`{ playerStatistics(playerId:"118726",filter:{timeWindow:LAST_YEAR}){ aggregationSeriesIds series{count kills{sum}} } }`);
+  const ids = r4?.data?.playerStatistics?.aggregationSeriesIds || [];
+  out.techno_last_year = { count: r4?.data?.playerStatistics?.series?.count, totalIds: ids.length, firstId: ids[0], lastId: ids[ids.length-1] };
+
+  // 4. Get metadata for most recent series ID to see what tournament it's from
+  if (ids.length) {
+    const r5 = await cdQ(`{ series(id:"${ids[0]}") { id startTimeScheduled tournament{id name} teams{baseInfo{id name}} } }`);
+    out.most_recent_series = r5?.data?.series || r5?.errors;
+  }
 
   return res.json(out);
 }
