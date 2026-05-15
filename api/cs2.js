@@ -146,7 +146,7 @@ export default async function handler(req, res) {
           headshots = Math.round((ts.series?.headshots?.sum || 0) / tc);
           if (tc === 1) win = (ts.series?.won?.find(w => w.value === true)?.count || 0) > 0;
         }
-        return { kills, deaths, assists:0, headshots, win, maps:[],
+        return { kills, deaths, assists:0, headshots, win, maps:[{kills, deaths, assists:0, headshots, map:""}],
           _date: series.startTimeScheduled?.split('T')[0] || '', _opp: opp };
       }).sort((a,b) => new Date(b._date) - new Date(a._date));
 
