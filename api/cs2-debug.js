@@ -1,30 +1,31 @@
 export const config = { maxDuration: 30 };
-const CD    = 'https://api-op.grid.gg/central-data/graphql';
 const STATS = 'https://api-op.grid.gg/statistics-feed/graphql';
 const KEY   = process.env.GRID_API_KEY;
-async function cdQ(q){const r=await fetch(CD,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':KEY},body:JSON.stringify({query:q})});return r.json();}
-async function stQ(q){const r=await fetch(STATS,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':KEY},body:JSON.stringify({query:q})});return r.json();}
+async function stQ(q){
+  const r=await fetch(STATS,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':KEY},body:JSON.stringify({query:q})});
+  return r.json();
+}
 
 export default async function handler(req,res){
   res.setHeader('Access-Control-Allow-Origin','*');
-  const name = req.query.name || 'Techno';
+  const pid = req.query.pid || '118726'; // Techno CS2 profile
+  const out = {};
 
-  // Get all profiles for this player
-  const sd = await cdQ(`{players(filter:{nickname:{equals:"${name}"}},first:10){edges{node{id nickname title{id name} team{id name}}}}}`);
-  const profiles = sd?.data?.players?.edges?.map(e=>e.node)||[];
+  // Test 1: LAST_YEAR (confirmed working)
+  const r1 = await stQ(`{ playerStatistics(playerId:"${pid}",filter:{timeWindow:LAST_YEAR}){ aggregationSeriesIds series{count kills{sum}} } }`);
+  out.LAST_YEAR = { count: r1?.data?.playerStatistics?.series?.count, kills: r1?.data?.playerStatistics?.series?.kills?.sum, ids: r1?.data?.playerStatistics?.aggregationSeriesIds?.length, error: r1?.errors?.[0]?.message };
 
-  // Check stats for EVERY profile ID
-  const checks = await Promise.all(profiles.map(async p=>{
-    const st = await stQ(`{playerStatistics(playerId:"${p.id}",filter:{timeWindow:LAST_YEAR}){aggregationSeriesIds series{count kills{sum} deaths{sum} ...on CsgoPlayerSeriesStatistics{headshots{sum}}}}}`);
-    return {
-      id:p.id, nickname:p.nickname, title:p.title?.id, team:p.team?.name,
-      seriesCount: st?.data?.playerStatistics?.series?.count||0,
-      killsSum: st?.data?.playerStatistics?.series?.kills?.sum,
-      hsSum: st?.data?.playerStatistics?.series?.headshots?.sum,
-      seriesIdsCount: (st?.data?.playerStatistics?.aggregationSeriesIds||[]).length,
-      error: st?.errors?.[0]?.message
-    };
-  }));
+  // Test 2: Does ALL_TIME exist?
+  const r2 = await stQ(`{ playerStatistics(playerId:"${pid}",filter:{timeWindow:ALL_TIME}){ aggregationSeriesIds series{count kills{sum}} } }`);
+  out.ALL_TIME = { count: r2?.data?.playerStatistics?.series?.count, kills: r2?.data?.playerStatistics?.series?.kills?.sum, ids: r2?.data?.playerStatistics?.aggregationSeriesIds?.length, error: r2?.errors?.[0]?.message };
 
-  return res.json({searched:name, checks});
+  // Test 3: Try startedAt date range filter (CS2 launched Oct 2023)
+  const r3 = await stQ(`{ playerStatistics(playerId:"${pid}",filter:{startedAt:{gte:"2023-10-01T00:00:00Z"}}){ aggregationSeriesIds series{count kills{sum}} } }`);
+  out.startedAt_since_cs2_launch = { count: r3?.data?.playerStatistics?.series?.count, kills: r3?.data?.playerStatistics?.series?.kills?.sum, ids: r3?.data?.playerStatistics?.aggregationSeriesIds?.length, error: r3?.errors?.[0]?.message };
+
+  // Test 4: Try without any filter at all
+  const r4 = await stQ(`{ playerStatistics(playerId:"${pid}"){ aggregationSeriesIds series{count kills{sum}} } }`);
+  out.no_filter = { count: r4?.data?.playerStatistics?.series?.count, kills: r4?.data?.playerStatistics?.series?.kills?.sum, ids: r4?.data?.playerStatistics?.aggregationSeriesIds?.length, error: r4?.errors?.[0]?.message };
+
+  return res.json({ pid, out });
 }
