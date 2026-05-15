@@ -1,9 +1,8 @@
-eexport const config = { maxDuration: 30 };
+export const config = { maxDuration: 30 };
 
 const CD    = 'https://api-op.grid.gg/central-data/graphql';
 const STATS = 'https://api-op.grid.gg/statistics-feed/graphql';
 const KEY   = process.env.GRID_API_KEY;
-const delay = ms => new Promise(r => setTimeout(r, ms));
 
 async function cdQuery(query) {
   const r = await fetch(CD, {
@@ -15,7 +14,6 @@ async function cdQuery(query) {
 }
 
 async function statsQuery(query) {
-  await delay(1500);
   const r = await fetch(STATS, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': KEY },
@@ -24,8 +22,6 @@ async function statsQuery(query) {
   return r.json();
 }
 
-// Search — no title filter so we get ALL profiles (CS:GO + CS2)
-// Stats live on CS:GO profile (title 1), current team on CS2 profile (title 28)
 async function searchPlayers(nickname) {
   const safe = nickname.replace(/"/g, '');
   for (const filter of [`equals: "${safe}"`, `contains: "${safe}"`]) {
@@ -37,7 +33,6 @@ async function searchPlayers(nickname) {
     const all = d?.data?.players?.edges?.map(e => e.node) || [];
     if (!all.length) continue;
 
-    // Group by lowercase nickname
     const groups = {};
     for (const p of all) {
       const k = p.nickname.toLowerCase();
@@ -47,18 +42,16 @@ async function searchPlayers(nickname) {
 
     const results = [];
     for (const profiles of Object.values(groups)) {
-      const csgo = profiles.find(p => p.title?.id === '1'); // stats live here
-      const cs2  = profiles.find(p => p.title?.id === '28'); // current team here
+      const csgo = profiles.find(p => p.title?.id === '1');
+      const cs2  = profiles.find(p => p.title?.id === '28');
       const any  = profiles[0];
-
       const statsId  = csgo?.id || cs2?.id || any.id;
       const teamId   = cs2?.team?.id  || csgo?.team?.id  || any.team?.id;
       const teamName = cs2?.team?.name || csgo?.team?.name || any.team?.name || 'N/A';
-
       if (statsId) results.push({
-        id:   `grid_${statsId}_${teamId || '0'}`,
+        id: `grid_${statsId}_${teamId || '0'}`,
         name: any.nickname,
-        sub:  `CS2 · ${teamName}`,
+        sub: `CS2 · ${teamName}`,
       });
     }
     if (results.length) return results;
@@ -66,34 +59,9 @@ async function searchPlayers(nickname) {
   return [];
 }
 
-async function getPlayerStats(playerId, timeWindow) {
+async function getOverallStats(playerId) {
   const d = await statsQuery(`{
-    playerStatistics(playerId: "${playerId}", filter: { timeWindow: ${timeWindow} }) {
-      aggregationSeriesIds
-      series {
-        count
-        kills  { sum avg min max }
-        deaths { sum avg }
-        won    { value count }
-        ... on CsgoPlayerSeriesStatistics { headshots { sum avg min max } }
-      }
-    }
-  }`);
-  return d?.data?.playerStatistics || null;
-}
-
-async function getSeriesMeta(ids) {
-  if (!ids.length) return [];
-  const fields = ids.slice(0, 30).map((id, i) =>
-    `s${i}: series(id: "${id}") { id startTimeScheduled tournament { id } teams { baseInfo { id name } } }`
-  ).join('\n');
-  const d = await cdQuery(`{ ${fields} }`);
-  return Object.values(d?.data || {}).filter(Boolean);
-}
-
-async function getTournamentStats(playerId, tournamentId) {
-  const d = await statsQuery(`{
-    playerStatistics(playerId: "${playerId}", filter: { tournamentIds: { in: ["${tournamentId}"] } }) {
+    playerStatistics(playerId: "${playerId}", filter: { timeWindow: LAST_YEAR }) {
       aggregationSeriesIds
       series {
         count
@@ -107,51 +75,80 @@ async function getTournamentStats(playerId, tournamentId) {
   return d?.data?.playerStatistics || null;
 }
 
-async function buildGameLog(statsPlayerId, teamId) {
-  // LAST_YEAR gives confirmed series IDs + overall stats
-  const overall = await getPlayerStats(statsPlayerId, 'LAST_YEAR');
+async function getSeriesMeta(ids) {
+  if (!ids.length) return [];
+  const fields = ids.slice(0, 25).map((id, i) =>
+    `s${i}: series(id: "${id}") { id startTimeScheduled tournament { id } teams { baseInfo { id name } } }`
+  ).join('\n');
+  const d = await cdQuery(`{ ${fields} }`);
+  return Object.values(d?.data || {}).filter(Boolean);
+}
+
+async function getTournamentStats(playerId, tournamentId) {
+  try {
+    const d = await statsQuery(`{
+      playerStatistics(playerId: "${playerId}", filter: { tournamentIds: { in: ["${tournamentId}"] } }) {
+        series {
+          count
+          kills  { sum }
+          deaths { sum }
+          won    { value count }
+          ... on CsgoPlayerSeriesStatistics { headshots { sum } }
+        }
+      }
+    }`);
+    return d?.data?.playerStatistics || null;
+  } catch { return null; }
+}
+
+async function buildGameLog(statsId, teamId) {
+  // Step 1: overall stats + confirmed series IDs
+  const overall = await getOverallStats(statsId);
   if (!overall?.aggregationSeriesIds?.length) return [];
 
   const ids        = overall.aggregationSeriesIds;
   const totalCount = overall.series?.count || 1;
-  const totalKills = overall.series?.kills?.sum  || 0;
-  const totalDeaths= overall.series?.deaths?.sum || 0;
-  const totalHS    = overall.series?.headshots?.sum || 0;
+  const avgKills   = Math.round((overall.series?.kills?.sum  || 0) / totalCount);
+  const avgDeaths  = Math.round((overall.series?.deaths?.sum || 0) / totalCount);
+  const avgHS      = Math.round((overall.series?.headshots?.sum || 0) / totalCount);
 
-  // Get metadata for all confirmed series
+  // Step 2: series metadata
   const meta = await getSeriesMeta(ids);
 
-  // Per-tournament queries for individual accuracy
-  const tournamentIds = [...new Set(meta.map(s => s.tournament?.id).filter(Boolean))];
+  // Step 3: per-tournament stats IN PARALLEL (no sequential delays)
+  const tournamentIds = [...new Set(meta.map(s => s.tournament?.id).filter(Boolean))].slice(0, 8);
+  const tResults = await Promise.allSettled(
+    tournamentIds.map(tid => getTournamentStats(statsId, tid))
+  );
   const tStats = {};
-  for (const tid of tournamentIds.slice(0, 10)) {
-    try {
-      const ts = await getTournamentStats(statsPlayerId, tid);
-      if ((ts?.series?.count || 0) > 0) tStats[tid] = ts;
-    } catch {}
-  }
+  tournamentIds.forEach((tid, i) => {
+    const r = tResults[i];
+    if (r.status === 'fulfilled' && (r.value?.series?.count || 0) > 0) {
+      tStats[tid] = r.value;
+    }
+  });
 
+  // Step 4: build game log
   const games = meta.map(series => {
     const opp = series.teams?.find(t => t.baseInfo?.id !== teamId)?.baseInfo?.name || '?';
-    const tid  = series.tournament?.id;
-    const ts   = tStats[tid];
-    let kills, deaths, headshots, win = null;
+    const ts  = tStats[series.tournament?.id];
+    let kills = avgKills, deaths = avgDeaths, headshots = avgHS, win = null;
 
     if (ts) {
-      const tc  = ts.series?.count || 1;
+      const tc = ts.series?.count || 1;
       kills     = Math.round((ts.series?.kills?.sum  || 0) / tc);
       deaths    = Math.round((ts.series?.deaths?.sum || 0) / tc);
       headshots = Math.round((ts.series?.headshots?.sum || 0) / tc);
       if (tc === 1) win = (ts.series?.won?.find(w => w.value === true)?.count || 0) > 0;
-    } else {
-      kills     = Math.round(totalKills  / totalCount);
-      deaths    = Math.round(totalDeaths / totalCount);
-      headshots = Math.round(totalHS     / totalCount);
     }
 
-    return { kills, deaths, assists: 0, headshots, win,
-      maps: [], _date: series.startTimeScheduled?.split('T')[0] || '',
-      _opp: opp, _matchUrl: null };
+    return {
+      kills, deaths, assists: 0, headshots, win,
+      maps: [],
+      _date: series.startTimeScheduled?.split('T')[0] || '',
+      _opp: opp,
+      _matchUrl: null,
+    };
   });
 
   return games.sort((a, b) => new Date(b._date) - new Date(a._date));
@@ -172,7 +169,7 @@ export default async function handler(req, res) {
     }
 
     if (action === 'gamelog') {
-      const parts   = (playerId || '').split('_');
+      const parts  = (playerId || '').split('_');
       const statsId = parts[1];
       const teamId  = parts[2];
       if (!statsId) return res.status(400).json({ error: 'Invalid player ID' });
