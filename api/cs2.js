@@ -247,9 +247,10 @@ export default async function handler(req, res) {
     }
 
     if (action==='gamelog') {
-      // Daily cache keyed by UTC date — new games appear the following day
+      // Daily cache — separate key for HS so kills lookup costs 1 credit, HS costs +3
+      const isHS = stat === 'headshots';
       const today = new Date().toISOString().split('T')[0];
-      const cacheKey = `hltv3_${playerId}_${today}`;
+      const cacheKey = `hltv3_${playerId}_${today}${isHS ? '_hs' : ''}`;
       const cached = await kvGet(cacheKey);
       if (cached) return res.json({ games: cached });
 
@@ -270,12 +271,14 @@ export default async function handler(req, res) {
         const { games: rawMaps } = parseHLTVMatches(html);
         if (!rawMaps.length) return res.status(404).json({ error:`No match data for ${hltvSlug}` });
 
-        // Always fetch HS — shared cache means one 4-credit lookup covers all stats
-        try {
-          const mapsForHS=rawMaps.filter(m=>m._matchUrl).slice(0,MAX_HS);
-          const hsResults=await Promise.all(mapsForHS.map(m=>fetchMatchHeadshots(m._matchUrl,hltvSlug)));
-          mapsForHS.forEach((m,i)=>{ m.headshots=hsResults[i]; });
-        } catch {}
+        // Only fetch HS when stat=headshots — saves 3 credits on every kills/deaths lookup
+        if (isHS) {
+          try {
+            const mapsForHS=rawMaps.filter(m=>m._matchUrl).slice(0,MAX_HS);
+            const hsResults=await Promise.all(mapsForHS.map(m=>fetchMatchHeadshots(m._matchUrl,hltvSlug)));
+            mapsForHS.forEach((m,i)=>{ m.headshots=hsResults[i]; });
+          } catch {}
+        }
 
         const games=groupIntoSeries(rawMaps).slice(0,40);
         kvSet(cacheKey, games);
