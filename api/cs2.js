@@ -105,7 +105,7 @@ export default async function handler(req, res) {
       const avgHS = Math.round((ps.series?.headshots?.sum || 0) / tot);
 
       // Step 2: series metadata (1 CD request, max 25 series)
-      const slice  = ids.slice(0, 25);
+      const slice  = ids.slice(0, 10);
       const fields = slice.map((id,i) =>
         `s${i}: series(id:"${id}") { id startTimeScheduled tournament { id } teams { baseInfo { id name } } }`
       ).join('\n');
