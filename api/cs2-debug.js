@@ -7,43 +7,53 @@ export default async function handler(req,res){
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // Deep introspect ALL types to find per-series/game player stat structures
-  const schema = await stQ(`{
-    __schema { types {
-      name
-      inputFields { name type { name kind ofType { name kind } } }
-      fields { 
-        name 
-        type { name kind ofType { name kind ofType { name kind } } }
-      }
-    }}
-  }`);
-  const types = schema?.data?.__schema?.types || [];
-  
-  // Find types that are relevant to series/game stats
-  const relevant = [
-    'SeriesStatistics','GameStatistics',
-    'CsgoSeriesStatistics','CsgoGameStatistics',
-    'CsgoSeriesPlayerStatistics','CsgoGamePlayerStatistics',
-    'SeriesStatisticsEntry','GameStatisticsEntry',
-    'PlayerSeriesStatisticsEntry','PlayerGameStatisticsEntry',
-    'DateTimePeriodFilter','DateTimePeriod',
-    'SeriesPlayerStatistics','GamePlayerStatistics'
-  ];
-  
-  for (const t of types) {
-    if (relevant.includes(t.name) || 
-        t.name?.toLowerCase().includes('series') || 
-        t.name?.toLowerCase().includes('game') ||
-        t.name?.toLowerCase().includes('player')) {
-      if (t.fields?.length || t.inputFields?.length) {
-        out[t.name] = {
-          fields: t.fields?.map(f => `${f.name}:${f.type?.name||f.type?.ofType?.name||f.type?.ofType?.ofType?.name||f.type?.kind}`),
-          inputs: t.inputFields?.map(f => f.name)
-        };
+  // Test 1: teamGameStatistics for The MongolZ (teamId: 51967 from our earlier debug)
+  // This returns per-GAME (per-map) stats with player breakdowns
+  const r1 = await stQ(`{
+    teamGameStatistics(teamId:"51967", selection:{
+      filter:{ timeWindow:LAST_MONTH }
+      first:3
+    }) {
+      count
+      won { value count }
+      kills { sum avg }
+      ... on TeamGameStatisticsCs2 {
+        players {
+          characters {
+            characterId
+            kills { sum avg }
+            deaths { sum avg }
+            headshots { sum avg }
+          }
+        }
       }
     }
-  }
+  }`);
+  out.teamGameStats = r1?.data || r1?.errors;
+
+  // Test 2: seriesStatistics games field for a tournament - does it break down per-player?
+  const r2 = await stQ(`{
+    seriesStatistics(titleId:"28", filter:{tournament:{id:"829250"}}) {
+      aggregationSeriesIds
+      count
+      games {
+        map { name }
+        teams {
+          kills { sum }
+          ... on TeamGameStatisticsCs2 {
+            players {
+              characters {
+                characterId
+                kills { sum }
+                deaths { sum }
+              }
+            }
+          }
+        }
+      }
+    }
+  }`);
+  out.seriesStatsGames = r2?.data || r2?.errors;
 
   return res.json(out);
 }
