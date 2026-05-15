@@ -14,30 +14,27 @@ async function stQ(q) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
-  const out = { key_set: !!KEY, steps: {} };
+  const name = req.query.name || 'device';
 
-  // Step 1: search NiKo
-  try {
-    const d = await cdQ(`{ players(filter:{nickname:{equals:"NiKo"}},first:5){ edges{ node{ id nickname title{id} team{id name} } } } }`);
-    out.steps.search = d;
-  } catch(e) { out.steps.search = { error: e.message }; }
+  // 1. Get ALL profiles for this nickname
+  const sd = await cdQ(`{ players(filter:{nickname:{equals:"${name}"}},first:10){ edges{ node{ id nickname title{id name} team{id name} } } } }`);
+  const profiles = sd?.data?.players?.edges?.map(e => e.node) || [];
 
-  // Step 2: stats for NiKo CS:GO profile (7190)
-  try {
-    const d = await stQ(`{ playerStatistics(playerId:"7190",filter:{timeWindow:LAST_MONTH}){ aggregationSeriesIds series{ count kills{sum} deaths{sum} ... on CsgoPlayerSeriesStatistics{ headshots{sum} } } } }`);
-    out.steps.stats = d;
-  } catch(e) { out.steps.stats = { error: e.message }; }
+  // 2. For each CS:GO profile (title 1), check if they have pro stats
+  const checks = [];
+  for (const p of profiles) {
+    const st = await stQ(`{ playerStatistics(playerId:"${p.id}",filter:{timeWindow:LAST_YEAR}){ aggregationSeriesIds series{ count kills{sum} } } }`);
+    checks.push({
+      id: p.id,
+      nickname: p.nickname,
+      title: p.title?.id,
+      team: p.team?.name,
+      seriesCount: st?.data?.playerStatistics?.series?.count || 0,
+      killsSum: st?.data?.playerStatistics?.series?.kills?.sum || 0,
+      sampleSeriesIds: (st?.data?.playerStatistics?.aggregationSeriesIds || []).slice(0,2),
+      statsError: st?.errors?.[0]?.message
+    });
+  }
 
-  // Step 3: series metadata for first confirmed ID
-  try {
-    const ids = out.steps.stats?.data?.playerStatistics?.aggregationSeriesIds || [];
-    if (ids.length) {
-      const d = await cdQ(`{ s0: series(id:"${ids[0]}") { id startTimeScheduled tournament{id name} teams{baseInfo{id name}} } }`);
-      out.steps.meta = d;
-    } else {
-      out.steps.meta = { skipped: 'no series IDs from stats' };
-    }
-  } catch(e) { out.steps.meta = { error: e.message }; }
-
-  return res.json(out);
+  return res.json({ searched: name, profiles, checks });
 }
