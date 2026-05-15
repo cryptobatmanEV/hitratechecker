@@ -9,26 +9,51 @@ export default async function handler(req,res){
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // 1. Get The MongolZ actual team ID from Techno's CS2 profile
-  const r1 = await cdQ(`{ players(filter:{nickname:{equals:"Techno"}},first:5){ edges{ node{ id nickname title{id} team{id name} } } } }`);
-  out.techno_profiles = r1?.data?.players?.edges?.map(e=>e.node);
+  // Step 1: Get ALL unique tournament IDs from Techno's 50 series
+  const sd = await stQ(`{ playerStatistics(playerId:"118726",filter:{timeWindow:LAST_YEAR}){ aggregationSeriesIds } }`);
+  const ids = sd?.data?.playerStatistics?.aggregationSeriesIds || [];
 
-  // 2. What tournaments does GRID have for 2026? (BLAST, ESL, IEM)
-  const r2 = await cdQ(`{ tournaments(filter:{name:{contains:"BLAST"}},first:5){ edges{ node{id name startDate} } } }`);
-  out.blast_tournaments = r2?.data?.tournaments?.edges?.map(e=>e.node) || r2?.errors;
+  // Get metadata for ALL 50 series in 4 parallel batches
+  const batches = [];
+  for(let i=0;i<ids.length;i+=15) batches.push(ids.slice(i,i+15));
+  const batchResults = await Promise.all(batches.map(async (chunk,bi) => {
+    const fields = chunk.map((id,j)=>`s${bi*15+j}: series(id:"${id}"){ id tournament{id name} startTimeScheduled }`).join('\n');
+    const md = await cdQ(`{ ${fields} }`);
+    return Object.values(md?.data||{}).filter(Boolean);
+  }));
+  const allMeta = batchResults.flat();
 
-  const r3 = await cdQ(`{ tournaments(filter:{name:{contains:"IEM"}},first:5){ edges{ node{id name startDate} } } }`);
-  out.iem_tournaments = r3?.data?.tournaments?.edges?.map(e=>e.node) || r3?.errors;
+  // Get all unique tournament IDs
+  const tourMap = {};
+  allMeta.forEach(s => { if(s.tournament?.id) tourMap[s.tournament.id] = s.tournament.name; });
+  out.all_tournaments = tourMap;
 
-  // 3. What's in Techno's aggregationSeriesIds - get LAST_YEAR to see what tournaments they're from
-  const r4 = await stQ(`{ playerStatistics(playerId:"118726",filter:{timeWindow:LAST_YEAR}){ aggregationSeriesIds series{count kills{sum}} } }`);
-  const ids = r4?.data?.playerStatistics?.aggregationSeriesIds || [];
-  out.techno_last_year = { count: r4?.data?.playerStatistics?.series?.count, totalIds: ids.length, firstId: ids[0], lastId: ids[ids.length-1] };
+  // Step 2: Query playerStatistics for EVERY unique tournament — find count=1 ones
+  const tourIds = Object.keys(tourMap);
+  const tourStats = await Promise.allSettled(tourIds.map(tid =>
+    stQ(`{ playerStatistics(playerId:"118726",filter:{tournamentIds:{in:["${tid}"]}}){ aggregationSeriesIds series{count kills{sum avg}} } }`)
+  ));
 
-  // 4. Get metadata for most recent series ID to see what tournament it's from
-  if (ids.length) {
-    const r5 = await cdQ(`{ series(id:"${ids[0]}") { id startTimeScheduled tournament{id name} teams{baseInfo{id name}} } }`);
-    out.most_recent_series = r5?.data?.series || r5?.errors;
+  out.per_tournament_counts = {};
+  tourIds.forEach((tid,i) => {
+    const r = tourStats[i];
+    if(r.status==='fulfilled') {
+      const ps = r.value?.data?.playerStatistics;
+      out.per_tournament_counts[tid] = {
+        name: tourMap[tid],
+        count: ps?.series?.count || 0,
+        killsSum: ps?.series?.kills?.sum || 0,
+        killsAvg: ps?.series?.kills?.avg || 0,
+        exact: (ps?.series?.count||0) === 1
+      };
+    }
+  });
+
+  // Step 3: Check if a tournament has children in CD (using BLAST Rotterdam parent)
+  const blastTourId = Object.keys(tourMap).find(id => tourMap[id]?.toLowerCase().includes('blast') || tourMap[id]?.toLowerCase().includes('rotterdam'));
+  if(blastTourId) {
+    const r = await cdQ(`{ tournament(id:"${blastTourId}") { id name parent{id name} children{id name} } }`);
+    out.blast_tournament_detail = r?.data?.tournament || r?.errors;
   }
 
   return res.json(out);
