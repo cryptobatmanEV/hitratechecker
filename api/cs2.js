@@ -1,4 +1,4 @@
-export const config = { maxDuration: 30 };
+eexport const config = { maxDuration: 30 };
 
 const CD    = 'https://api-op.grid.gg/central-data/graphql';
 const STATS = 'https://api-op.grid.gg/statistics-feed/graphql';
