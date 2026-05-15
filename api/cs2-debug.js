@@ -7,53 +7,42 @@ export default async function handler(req,res){
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // Test 1: teamGameStatistics for The MongolZ (teamId: 51967 from our earlier debug)
-  // This returns per-GAME (per-map) stats with player breakdowns
-  const r1 = await stQ(`{
-    teamGameStatistics(teamId:"51967", selection:{
-      filter:{ timeWindow:LAST_MONTH }
-      first:3
-    }) {
-      count
-      won { value count }
-      kills { sum avg }
-      ... on TeamGameStatisticsCs2 {
-        players {
-          characters {
-            characterId
-            kills { sum avg }
-            deaths { sum avg }
-            headshots { sum avg }
-          }
-        }
-      }
-    }
+  // Introspect DateTimeFilter.period type
+  const schema = await stQ(`{
+    __schema { types {
+      name
+      inputFields { name type { name kind ofType { name kind ofType { name kind } } } }
+      enumValues { name }
+    }}
   }`);
-  out.teamGameStats = r1?.data || r1?.errors;
+  const types = schema?.data?.__schema?.types || [];
+  for (const t of types) {
+    if (t.name === 'DateTimeFilter' || t.name === 'DateTimePeriod' || 
+        t.name?.includes('Period') || t.name === 'TimeRangeFilter') {
+      out['type_' + t.name] = {
+        inputs: t.inputFields?.map(f => `${f.name}:${f.type?.name||f.type?.ofType?.name||f.type?.kind}`),
+        enums: t.enumValues?.map(e => e.name)
+      };
+    }
+  }
 
-  // Test 2: seriesStatistics games field for a tournament - does it break down per-player?
+  // Test period with a date string (Techno played vs Aurora on 2026-03-27)
   const r2 = await stQ(`{
-    seriesStatistics(titleId:"28", filter:{tournament:{id:"829250"}}) {
+    playerStatistics(playerId:"118726", filter:{startedAt:{period:"2026-03-27"}}) {
       aggregationSeriesIds
-      count
-      games {
-        map { name }
-        teams {
-          kills { sum }
-          ... on TeamGameStatisticsCs2 {
-            players {
-              characters {
-                characterId
-                kills { sum }
-                deaths { sum }
-              }
-            }
-          }
-        }
-      }
+      series { count kills{sum avg} deaths{sum} ...on CsgoPlayerSeriesStatistics{headshots{sum}} }
     }
   }`);
-  out.seriesStatsGames = r2?.data || r2?.errors;
+  out.period_date = r2?.data || r2?.errors?.[0]?.message;
+
+  // Test period with ISO datetime
+  const r3 = await stQ(`{
+    playerStatistics(playerId:"118726", filter:{startedAt:{period:"2026-03-27T00:00:00Z"}}) {
+      aggregationSeriesIds
+      series { count kills{sum} }
+    }
+  }`);
+  out.period_datetime = r3?.data || r3?.errors?.[0]?.message;
 
   return res.json(out);
 }
