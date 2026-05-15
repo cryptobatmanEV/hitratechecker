@@ -7,42 +7,39 @@ export default async function handler(req,res){
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // Introspect DateTimeFilter.period type
+  // 1. Get exact RETURN TYPE of teamGameStatistics
   const schema = await stQ(`{
-    __schema { types {
+    __schema { queryType { fields {
       name
-      inputFields { name type { name kind ofType { name kind ofType { name kind } } } }
-      enumValues { name }
-    }}
+      type { name kind ofType { name kind ofType { name kind } } }
+    }}}
   }`);
-  const types = schema?.data?.__schema?.types || [];
-  for (const t of types) {
-    if (t.name === 'DateTimeFilter' || t.name === 'DateTimePeriod' || 
-        t.name?.includes('Period') || t.name === 'TimeRangeFilter') {
-      out['type_' + t.name] = {
-        inputs: t.inputFields?.map(f => `${f.name}:${f.type?.name||f.type?.ofType?.name||f.type?.kind}`),
-        enums: t.enumValues?.map(e => e.name)
-      };
+  const fields = schema?.data?.__schema?.queryType?.fields || [];
+  out.returnTypes = {};
+  for (const f of fields) {
+    if (['teamGameStatistics','gameStatistics','seriesStatistics','playerStatistics'].includes(f.name)) {
+      out.returnTypes[f.name] = f.type?.name || f.type?.kind + '<' + (f.type?.ofType?.name || f.type?.ofType?.kind) + '>';
     }
   }
 
-  // Test period with a date string (Techno played vs Aurora on 2026-03-27)
+  // 2. Test teamGameStatistics with JUST basic fields (no characters)
+  // Does it return per-game data or aggregate?
   const r2 = await stQ(`{
-    playerStatistics(playerId:"118726", filter:{startedAt:{period:"2026-03-27"}}) {
-      aggregationSeriesIds
-      series { count kills{sum avg} deaths{sum} ...on CsgoPlayerSeriesStatistics{headshots{sum}} }
+    teamGameStatistics(teamId:"51967", selection:{
+      filter:{ timeWindow:LAST_MONTH }
+      first:10
+    }) {
+      __typename
+      count
+      won { value count }
+      kills { sum avg min max }
+      deaths { sum avg }
     }
   }`);
-  out.period_date = r2?.data || r2?.errors?.[0]?.message;
+  out.teamGameStats_basic = r2?.data || r2?.errors;
 
-  // Test period with ISO datetime
-  const r3 = await stQ(`{
-    playerStatistics(playerId:"118726", filter:{startedAt:{period:"2026-03-27T00:00:00Z"}}) {
-      aggregationSeriesIds
-      series { count kills{sum} }
-    }
-  }`);
-  out.period_datetime = r3?.data || r3?.errors?.[0]?.message;
+  // 3. Introspect CharacterOccurrenceStatistic fully
+  const types = schema?.data?.__schema?.types || [];
 
   return res.json(out);
 }
