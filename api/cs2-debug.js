@@ -9,25 +9,32 @@ export default async function handler(req,res){
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // 1. ALL available queries in Stats Feed
-  const schema = await stQ(`{ __schema { queryType { fields { name description } } } }`);
-  out.statsQueries = schema?.data?.__schema?.queryType?.fields?.map(f=>f.name) || schema?.errors;
+  // 1. Get exact arguments for seriesStatistics, gameStatistics, teamGameStatistics
+  const schema = await stQ(`{
+    __schema { queryType { fields {
+      name
+      args { name type { name kind ofType { name kind ofType { name kind } } } }
+    }}}
+  }`);
+  const fields = schema?.data?.__schema?.queryType?.fields || [];
+  out.queryArgs = {};
+  for (const f of fields) {
+    if (['seriesStatistics','gameStatistics','teamGameStatistics','playerStatistics'].includes(f.name)) {
+      out.queryArgs[f.name] = f.args.map(a => ({
+        name: a.name,
+        type: a.type?.name || a.type?.ofType?.name || a.type?.kind
+      }));
+    }
+  }
 
-  // 2. ALL available queries in Central Data
-  const cdSchema = await cdQ(`{ __schema { queryType { fields { name description } } } }`);
-  out.cdQueries = cdSchema?.data?.__schema?.queryType?.fields?.map(f=>f.name) || cdSchema?.errors;
+  // 2. Test seriesStatistics with titleId + known series ID (NiKo IEM Rio series)
+  const r2 = await stQ(`{ seriesStatistics(titleId:"28", seriesId:"2931340") { __typename } }`);
+  out.seriesStats_test1 = r2?.data || r2?.errors?.[0]?.message;
 
-  // 3. Try querying series stats directly from Stats Feed with a known series ID
-  const r3 = await stQ(`{ seriesStatistics(seriesId:"2931340") { kills{sum} deaths{sum} } }`);
-  out.seriesStatistics = r3?.data || r3?.errors?.[0]?.message;
-
-  // 4. Try series player stats from Stats Feed
-  const r4 = await stQ(`{ seriesPlayerStatistics(seriesId:"2931340") { kills{sum} deaths{sum} } }`);
-  out.seriesPlayerStatistics = r4?.data || r4?.errors?.[0]?.message;
-
-  // 5. Try getting stats FROM the series object in Central Data
-  const r5 = await cdQ(`{ series(id:"2931340") { id playerStatistics { playerId stats { kills deaths } } } }`);
-  out.seriesPlayerStatsFromCD = r5?.data || r5?.errors?.[0]?.message;
+  // 3. Try gameStatistics - need to find what a "game" ID is
+  // First get games from a known series in CD
+  const r3 = await cdQ(`{ series(id:"2931340") { id games { id sequenceNumber } } }`);
+  out.seriesGames = r3?.data || r3?.errors?.[0]?.message;
 
   return res.json(out);
 }
