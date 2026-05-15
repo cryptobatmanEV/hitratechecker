@@ -14,27 +14,16 @@ async function stQ(q) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
-  const name = req.query.name || 'device';
 
-  // 1. Get ALL profiles for this nickname
-  const sd = await cdQ(`{ players(filter:{nickname:{equals:"${name}"}},first:10){ edges{ node{ id nickname title{id name} team{id name} } } } }`);
-  const profiles = sd?.data?.players?.edges?.map(e => e.node) || [];
+  // Get device's series IDs
+  const sd = await stQ(`{ playerStatistics(playerId:"3455",filter:{timeWindow:LAST_YEAR}){ aggregationSeriesIds } }`);
+  const ids = sd?.data?.playerStatistics?.aggregationSeriesIds || [];
 
-  // 2. For each CS:GO profile (title 1), check if they have pro stats
-  const checks = [];
-  for (const p of profiles) {
-    const st = await stQ(`{ playerStatistics(playerId:"${p.id}",filter:{timeWindow:LAST_YEAR}){ aggregationSeriesIds series{ count kills{sum} } } }`);
-    checks.push({
-      id: p.id,
-      nickname: p.nickname,
-      title: p.title?.id,
-      team: p.team?.name,
-      seriesCount: st?.data?.playerStatistics?.series?.count || 0,
-      killsSum: st?.data?.playerStatistics?.series?.kills?.sum || 0,
-      sampleSeriesIds: (st?.data?.playerStatistics?.aggregationSeriesIds || []).slice(0,2),
-      statsError: st?.errors?.[0]?.message
-    });
-  }
+  // Get metadata for first 8 series — show tournament names
+  const fields = ids.slice(0,8).map((id,i) =>
+    `s${i}: series(id:"${id}") { id startTimeScheduled tournament{ id name } teams{ baseInfo{ id name } } }`
+  ).join('\n');
+  const md = await cdQ(`{ ${fields} }`);
 
-  return res.json({ searched: name, profiles, checks });
+  return res.json({ totalIds: ids.length, seriesIds: ids.slice(0,8), meta: md?.data });
 }
