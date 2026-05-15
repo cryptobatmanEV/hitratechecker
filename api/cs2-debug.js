@@ -7,47 +7,43 @@ export default async function handler(req,res){
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // 1. Introspect tournament filter types + return types
+  // Deep introspect ALL types to find per-series/game player stat structures
   const schema = await stQ(`{
     __schema { types {
       name
       inputFields { name type { name kind ofType { name kind } } }
-      fields { name type { name kind ofType { name kind ofType { name kind } } } }
+      fields { 
+        name 
+        type { name kind ofType { name kind ofType { name kind } } }
+      }
     }}
   }`);
   const types = schema?.data?.__schema?.types || [];
+  
+  // Find types that are relevant to series/game stats
+  const relevant = [
+    'SeriesStatistics','GameStatistics',
+    'CsgoSeriesStatistics','CsgoGameStatistics',
+    'CsgoSeriesPlayerStatistics','CsgoGamePlayerStatistics',
+    'SeriesStatisticsEntry','GameStatisticsEntry',
+    'PlayerSeriesStatisticsEntry','PlayerGameStatisticsEntry',
+    'DateTimePeriodFilter','DateTimePeriod',
+    'SeriesPlayerStatistics','GamePlayerStatistics'
+  ];
+  
   for (const t of types) {
-    if ([
-      'SeriesStatisticsTournamentFilter',
-      'GameStatisticsTournamentFilter',
-      'SeriesStatistics',
-      'GameStatistics',
-      'CsgoSeriesStatistics',
-      'CsgoGameStatistics',
-      'DateTimeFilter'
-    ].includes(t.name)) {
-      out[t.name] = {
-        inputFields: t.inputFields?.map(f => f.name),
-        fields: t.fields?.map(f => f.name)
-      };
+    if (relevant.includes(t.name) || 
+        t.name?.toLowerCase().includes('series') || 
+        t.name?.toLowerCase().includes('game') ||
+        t.name?.toLowerCase().includes('player')) {
+      if (t.fields?.length || t.inputFields?.length) {
+        out[t.name] = {
+          fields: t.fields?.map(f => `${f.name}:${f.type?.name||f.type?.ofType?.name||f.type?.ofType?.ofType?.name||f.type?.kind}`),
+          inputs: t.inputFields?.map(f => f.name)
+        };
+      }
     }
   }
-
-  // 2. Test seriesStatistics with tournament filter (IEM Rio 2026 Playoffs = 829250)
-  const r2 = await stQ(`{
-    seriesStatistics(titleId:"1", filter:{tournament:{id:"829250"}}) {
-      __typename
-    }
-  }`);
-  out.seriesStats_tournament = r2?.data || r2?.errors?.[0]?.message;
-
-  // 3. Test gameStatistics with tournament filter
-  const r3 = await stQ(`{
-    gameStatistics(titleId:"1", filter:{tournament:{id:"829250"}}) {
-      __typename
-    }
-  }`);
-  out.gameStats_tournament = r3?.data || r3?.errors?.[0]?.message;
 
   return res.json(out);
 }
