@@ -1,183 +1,36 @@
-export const config = { maxDuration: 30 };
+Subject: Open Platform API — Tournament Coverage Gaps & Per-Series Statistics Question
 
-const CD    = 'https://api-op.grid.gg/central-data/graphql';
-const STATS = 'https://api-op.grid.gg/statistics-feed/graphql';
-const KEY   = process.env.GRID_API_KEY;
-const KV_URL   = process.env.KV_REST_API_URL;
-const KV_TOKEN = process.env.KV_REST_API_TOKEN;
+Hi GRID team,
 
-async function kvGet(key) {
-  if (!KV_URL) return null;
-  try {
-    const r = await fetch(KV_URL, { method:'POST', headers:{'Authorization':'Bearer '+KV_TOKEN,'Content-Type':'application/json'}, body:JSON.stringify(['GET',key]) });
-    const d = await r.json(); return d.result ? JSON.parse(d.result) : null;
-  } catch { return null; }
-}
-async function kvSet(key, val) {
-  if (!KV_URL) return;
-  try { await fetch(KV_URL, { method:'POST', headers:{'Authorization':'Bearer '+KV_TOKEN,'Content-Type':'application/json'}, body:JSON.stringify(['SETEX',key,86400,JSON.stringify(val)]) }); } catch {}
-}
-async function cdQ(query) {
-  const r = await fetch(CD, { method:'POST', headers:{'Content-Type':'application/json','x-api-key':KEY}, body:JSON.stringify({query}) });
-  return r.json();
-}
-async function stQ(query) {
-  const r = await fetch(STATS, { method:'POST', headers:{'Content-Type':'application/json','x-api-key':KEY}, body:JSON.stringify({query}) });
-  return r.json();
-}
+I'm building a CS2 player performance research tool using the Open Platform API and have run into two issues I'm hoping you can help with.
 
-// Apply tournament stats to series — exact when count=1, average otherwise
-function applyStats(series, ts) {
-  const tc = ts?.series?.count || 0;
-  if (!tc || !series.length) return;
-  const k  = Math.round((ts.series.kills?.sum  || 0) / tc);
-  const d  = Math.round((ts.series.deaths?.sum || 0) / tc);
-  const hs = Math.round((ts.series.headshots?.sum || 0) / tc);
-  const win = tc === 1 ? (ts.series?.won?.find(w=>w.value===true)?.count||0) > 0 : null;
-  series.forEach(s => { s._k = k; s._d = d; s._hs = hs; if (tc===1) s._win = win; });
-}
+**1. Tournament Coverage Gaps**
 
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  if (req.method === 'OPTIONS') return res.status(200).end();
+After extensive testing I've found that our Open Platform access appears to cover ESL and IEM events well, but several major 2026 tournaments are missing entirely from both the Central Data and Statistics Feed APIs:
 
-  const { action, playerId } = req.query;
-  const nickname = req.query.nickname || req.query.q || '';
+- PGL Bucharest 2026 (April 4–11, 2026)
+- PGL Astana 2026 (May 9–13, 2026)
+- BLAST Open Rotterdam 2026 (March 2026)
 
-  try {
-    // ── SEARCH ────────────────────────────────────────────────────────────────
-    if (action === 'search') {
-      const safe = nickname.replace(/"/g,'');
-      for (const f of [`equals: "${safe}"`, `contains: "${safe}"`]) {
-        const d = await cdQ(`{ players(filter:{nickname:{${f}}},first:10){ edges{node{id nickname title{id} team{id name}}} } }`);
-        const all = d?.data?.players?.edges?.map(e=>e.node) || [];
-        if (!all.length) continue;
-        const groups = {};
-        for (const p of all) { const k=p.nickname.toLowerCase(); if(!groups[k])groups[k]=[]; groups[k].push(p); }
-        const players = [];
-        for (const profiles of Object.values(groups)) {
-          const csgo = profiles.find(p=>p.title?.id==='1');
-          const cs2  = profiles.find(p=>p.title?.id==='28');
-          const any  = profiles[0];
-          const statsId  = csgo?.id || cs2?.id || any.id;
-          const teamId   = cs2?.team?.id   || csgo?.team?.id   || any.team?.id;
-          const teamName = cs2?.team?.name  || csgo?.team?.name  || any.team?.name || 'N/A';
-          if (statsId) players.push({ id:`grid_${statsId}_${teamId||'0'}`, name:any.nickname, sub:`CS2 · ${teamName}` });
-        }
-        if (players.length) return res.json({ players });
-      }
-      return res.json({ players:[] });
-    }
+Searching for these by name returns no results in the `tournaments` query. Is PGL and BLAST data available on the Open Platform, or is this restricted to a higher access tier? If so, what would it take to get access?
 
-    // ── GAMELOG ───────────────────────────────────────────────────────────────
-    if (action === 'gamelog') {
-      const parts   = (playerId||'').split('_');
-      const statsId = parts[1];
-      const teamId  = parts[2];
-      if (!statsId) return res.status(400).json({ error:'Invalid ID' });
+**2. Per-Series Individual Statistics**
 
-      const today    = new Date().toISOString().split('T')[0];
-      const cacheKey = `grid_v5_${statsId}_${today}`;
-      const cached   = await kvGet(cacheKey);
-      if (cached) return res.json({ games:cached });
+I've thoroughly explored the Statistics Feed schema via introspection and found that `playerStatistics` only returns aggregate stats (sum/avg/min/max) across a tournament or time window — not individual stats per series. I tested `seriesStatistics`, `gameStatistics`, `teamGameStatistics`, and all segment/game sub-fields but could not find a way to retrieve kills/deaths/headshots for a specific individual series.
 
-      // Step 1: overall LAST_YEAR stats + all series IDs
-      const sd = await stQ(`{
-        playerStatistics(playerId:"${statsId}", filter:{timeWindow:LAST_YEAR}) {
-          aggregationSeriesIds
-          series {
-            count kills{sum} deaths{sum} won{value count}
-            ...on CsgoPlayerSeriesStatistics { headshots{sum avg min max} }
-            ...on Cs2PlayerSeriesStatistics  { headshots{sum avg min max} }
-          }
-        }
-      }`);
+Is there an endpoint or query pattern that returns per-series (individual match) player statistics? This is critical for our use case — we need to know that a player had 24 kills in Series A and 38 kills in Series B, not just that they averaged 31 across the tournament.
 
-      const ps  = sd?.data?.playerStatistics;
-      const ids = ps?.aggregationSeriesIds || [];
-      if (!ids.length) return res.json({ games:[] });
+**Our Use Case**
 
-      const tot   = ps.series?.count || 1;
-      const avgK  = Math.round((ps.series?.kills?.sum  || 0) / tot);
-      const avgD  = Math.round((ps.series?.deaths?.sum || 0) / tot);
-      const avgHS = Math.round((ps.series?.headshots?.sum || 0) / tot);
+We run a CS2 DFS (daily fantasy sports) research community and are building a hit-rate tracker that shows how often players exceed statistical lines. Accurate per-game data and full tournament coverage are essential for this to be useful.
 
-      // Step 2: all series metadata in parallel batches → sort by date → take 30 most recent
-      const batches = [];
-      for (let i=0; i<ids.length; i+=15) batches.push(ids.slice(i,i+15));
-      const batchResults = await Promise.all(batches.map(async (chunk,bi) => {
-        const fields = chunk.map((id,j) =>
-          `s${bi*15+j}: series(id:"${id}") { id startTimeScheduled tournament{id} teams{baseInfo{id name}} }`
-        ).join('\n');
-        const md = await cdQ(`{ ${fields} }`);
-        return Object.values(md?.data||{}).filter(Boolean);
-      }));
-      const allMeta = batchResults.flat()
-        .filter(s => s.startTimeScheduled)
-        .sort((a,b) => new Date(b.startTimeScheduled) - new Date(a.startTimeScheduled))
-        .slice(0, 30);
+We're happy to move to a higher access tier if that's what's needed. Could you let us know:
+1. Whether PGL/BLAST tournament data is available and how to access it
+2. Whether per-series individual player stats exist anywhere in the API
+3. Whether Closed Platform access would resolve either or both of these gaps
 
-      // Step 3: per-tournament stats with min/max/sum — ALL IN PARALLEL
-      const tourIds = [...new Set(allMeta.map(s=>s.tournament?.id).filter(Boolean))].slice(0,10);
-      const tourResults = await Promise.allSettled(tourIds.map(tid =>
-        stQ(`{
-          playerStatistics(playerId:"${statsId}", filter:{tournamentIds:{in:["${tid}"]}}) {
-            aggregationSeriesIds
-            series {
-              count kills{sum} deaths{sum} won{value count}
-              ...on CsgoPlayerSeriesStatistics { headshots{sum avg min max} }
-              ...on Cs2PlayerSeriesStatistics  { headshots{sum avg min max} }
-            }
-          }
-        }`)
-      ));
-      const tStats = {};
-      tourIds.forEach((tid,i) => {
-        const r = tourResults[i];
-        if (r.status==='fulfilled') {
-          const ts = r.value?.data?.playerStatistics;
-          if ((ts?.series?.count||0) > 0) tStats[tid] = ts;
-        }
-      });
+Thank you for the great platform — looking forward to hearing from you.
 
-      // Step 4: build series objects, group by tournament, distribute stats
-      const seriesObjs = allMeta.map(series => {
-        const opp = series.teams?.find(t=>t.baseInfo?.id!==teamId)?.baseInfo?.name || '?';
-        return {
-          _date: series.startTimeScheduled?.split('T')[0] || '',
-          _opp: opp,
-          _tourId: series.tournament?.id,
-          _k: avgK, _d: avgD, _hs: avgHS, _win: null,
-        };
-      });
-
-      // Group by tournament and distribute min/max/sum across series in that tournament
-      const byTour = {};
-      seriesObjs.forEach(s => { if(!byTour[s._tourId])byTour[s._tourId]=[]; byTour[s._tourId].push(s); });
-      for (const [tid, group] of Object.entries(byTour)) {
-        const ts = tStats[tid];
-        if (ts) applyStats(group, ts);
-      }
-
-      // Step 5: build final game objects
-      const games = seriesObjs.map(s => ({
-        kills:     Math.max(0, s._k),
-        deaths:    Math.max(0, s._d),
-        assists:   0,
-        headshots: Math.max(0, s._hs),
-        win:       s._win,
-        maps:      [{ kills: Math.max(0,s._k), deaths: Math.max(0,s._d), assists:0, headshots: Math.max(0,s._hs), map:'' }],
-        _date:     s._date,
-        _opp:      s._opp,
-      })).sort((a,b) => new Date(b._date) - new Date(a._date));
-
-      kvSet(cacheKey, games);
-      return res.json({ games });
-    }
-
-    return res.status(400).json({ error:'Unknown action' });
-  } catch(e) {
-    return res.status(500).json({ error:e.message });
-  }
-}
+Best,
+CryptoBatman
+The +EV Cave
