@@ -4,6 +4,24 @@ const CD    = 'https://api-op.grid.gg/central-data/graphql';
 const STATS = 'https://api-op.grid.gg/statistics-feed/graphql';
 const KEY   = process.env.GRID_API_KEY;
 
+const KV_URL   = process.env.KV_REST_API_URL;
+const KV_TOKEN = process.env.KV_REST_API_TOKEN;
+
+async function kvGet(key) {
+  if (!KV_URL) return null;
+  try {
+    const r = await fetch(KV_URL, { method:'POST', headers:{'Authorization':'Bearer '+KV_TOKEN,'Content-Type':'application/json'}, body:JSON.stringify(['GET', key]) });
+    const d = await r.json();
+    return d.result ? JSON.parse(d.result) : null;
+  } catch { return null; }
+}
+async function kvSet(key, value) {
+  if (!KV_URL) return;
+  try {
+    await fetch(KV_URL, { method:'POST', headers:{'Authorization':'Bearer '+KV_TOKEN,'Content-Type':'application/json'}, body:JSON.stringify(['SETEX', key, 86400, JSON.stringify(value)]) });
+  } catch {}
+}
+
 async function cdQuery(query) {
   const r = await fetch(CD, {
     method: 'POST',
@@ -102,6 +120,11 @@ async function getTournamentStats(playerId, tournamentId) {
 }
 
 async function buildGameLog(statsId, teamId) {
+  const today = new Date().toISOString().split('T')[0];
+  const cacheKey = 'grid_' + statsId + '_' + today;
+  const cached = await kvGet(cacheKey);
+  if (cached) return cached;
+
   // Step 1: overall stats + confirmed series IDs
   const overall = await getOverallStats(statsId);
   if (!overall?.aggregationSeriesIds?.length) return [];
@@ -151,7 +174,9 @@ async function buildGameLog(statsId, teamId) {
     };
   });
 
-  return games.sort((a, b) => new Date(b._date) - new Date(a._date));
+  const sorted = games.sort((a, b) => new Date(b._date) - new Date(a._date));
+  kvSet(cacheKey, sorted);
+  return sorted;
 }
 
 export default async function handler(req, res) {
