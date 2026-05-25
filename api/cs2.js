@@ -3,32 +3,11 @@ export const config = { maxDuration: 30 };
 const FACEIT_KEY  = process.env.FACEIT_API_KEY;
 const SCRAPER_KEY = process.env.SCRAPER_API_KEY;
 const FACEIT_BASE = 'https://open.faceit.com/data/v4';
-const KV_URL      = process.env.KV_REST_API_URL;
-const KV_TOKEN    = process.env.KV_REST_API_TOKEN;
 
-// Cache resets daily at midnight UTC — ensures today's game shows tomorrow
-// Player ID lookups cached 7 days (HLTV IDs never change)
-const CACHE_TTL = 60 * 60 * 24; // 24 hours for gamelog data
 
-const KV_TIMEOUT = 2000;
-const kvRace = p => Promise.race([p, new Promise(r=>setTimeout(r,KV_TIMEOUT))]);
-
-async function kvGet(key) {
-  if (!KV_URL) return null;
-  try {
-    const r = await kvRace(fetch(`${KV_URL}/get/${encodeURIComponent(key)}`,{headers:{Authorization:`Bearer ${KV_TOKEN}`}}));
-    if (!r) return null;
-    const d = await r.json();
-    return d.result ? JSON.parse(d.result) : null;
-  } catch { return null; }
-}
-
-async function kvSet(key, val, ttl=CACHE_TTL) {
-  if (!KV_URL) return;
-  try {
-    await kvRace(fetch(KV_URL,{method:'POST',headers:{Authorization:`Bearer ${KV_TOKEN}`,'Content-Type':'application/json'},body:JSON.stringify(['SETEX',key,ttl,JSON.stringify(val)])}));
-  } catch {}
-}
+// KV caching removed — 1 ScraperAPI credit per search, no external dependencies
+const kvGet = async () => null;
+const kvSet = async () => {};
 
 const PRO_SLUGS = [
   'NiKo','ZywOo','device','s1mple','m0NESY','rain','ropz','broky','karrigan',
@@ -309,7 +288,7 @@ export default async function handler(req, res) {
 
         const games=groupIntoSeries(rawMaps).slice(0,40);
         // HS cached 7 days, kills cached 24hr
-        await kvSet(cacheKey, games, isHS ? 604800 : CACHE_TTL);
+        await kvSet(cacheKey, games);
         return res.json({ games });
       }
 
