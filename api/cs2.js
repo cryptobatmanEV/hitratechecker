@@ -21,12 +21,13 @@ async function kvGet(key) {
   } catch { return null; }
 }
 
-async function kvSet(key, val) {
+async function kvSet(key, val, ttl=CACHE_TTL) {
   if (!KV_URL) return;
   try {
-    await fetch(`${KV_URL}/setex/${encodeURIComponent(key)}/${CACHE_TTL}/${encodeURIComponent(JSON.stringify(val))}`, {
+    await fetch(KV_URL, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${KV_TOKEN}` }
+      headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(['SETEX', key, ttl, JSON.stringify(val)])
     });
   } catch {}
 }
@@ -63,6 +64,33 @@ async function scraperFetch(url, js=false) {
   return r.text();
 }
 
+// Hardcoded HLTV IDs for common DFS players — instant lookup, 0 credits, 0 API calls
+const KNOWN_IDS = {
+  'niko':{id:'3741',slug:'NiKo'},'zywoo':{id:'11893',slug:'ZywOo'},
+  'device':{id:'7592',slug:'device'},'s1mple':{id:'7998',slug:'s1mple'},
+  'm0nesy':{id:'19212',slug:'m0NESY'},'ropz':{id:'11816',slug:'ropz'},
+  'rain':{id:'8183',slug:'rain'},'karrigan':{id:'429',slug:'karrigan'},
+  'twistzz':{id:'10394',slug:'Twistzz'},'naf':{id:'10395',slug:'NAF'},
+  'elige':{id:'9816',slug:'EliGE'},'yekindar':{id:'16015',slug:'YEKINDAR'},
+  'blamef':{id:'12605',slug:'blameF'},'broky':{id:'16548',slug:'broky'},
+  'frozen':{id:'12830',slug:'frozen'},'apex':{id:'7322',slug:'apEX'},
+  'fallen':{id:'702',slug:'FalleN'},'dupreeh':{id:'3820',slug:'dupreeh'},
+  'magisk':{id:'9332',slug:'Magisk'},'krimz':{id:'4960',slug:'KRIMZ'},
+  'techno':{id:'20275',slug:'Techno'},'hunter-':{id:'10907',slug:'huNter-'},
+  'jks':{id:'9996',slug:'jks'},'k0nfig':{id:'8399',slug:'k0nfig'},
+  'xantares':{id:'12788',slug:'XANTARES'},'grim':{id:'11673',slug:'Grim'},
+  'brehze':{id:'10005',slug:'brehze'},'stewie2k':{id:'8979',slug:'Stewie2K'},
+  'autimatic':{id:'8190',slug:'autimatic'},'woxic':{id:'11502',slug:'woxic'},
+  'electronic':{id:'15449',slug:'electronic'},'b1t':{id:'18998',slug:'b1t'},
+  'sh1ro':{id:'18594',slug:'sh1ro'},'ax1le':{id:'18689',slug:'Ax1Le'},
+  'jame':{id:'12199',slug:'Jame'},'degster':{id:'12816',slug:'degster'},
+  'hampus':{id:'14652',slug:'hampus'},'kscerato':{id:'13968',slug:'KSCERATO'},
+  'yuurih':{id:'12345',slug:'yuurih'},'ins':{id:'16747',slug:'INS'},
+  'vexite':{id:'18176',slug:'Vexite'},'jkaem':{id:'9874',slug:'jkaem'},
+  '910':{id:'12435',slug:'910'},'blitz':{id:'11060',slug:'bLitz'},
+  'mzinho':{id:'15719',slug:'mzinho'},'cobrazera':{id:'9033',slug:'cobrazera'},
+};
+
 // Bulk player ID map — fetches HLTV stats page once, caches 3 days
 // Costs 1 credit per 3 days for ALL players combined
 async function getPlayerIdMap() {
@@ -80,32 +108,33 @@ async function getPlayerIdMap() {
   while((m=rx.exec(html))!==null) { map[m[2].toLowerCase()] = {id:m[1],slug:m[2]}; }
   if (Object.keys(map).length > 5) {
     try {
-      await fetch(`${KV_URL}/setex/${encodeURIComponent(mapKey)}/259200/${encodeURIComponent(JSON.stringify(map))}`,
-        {method:'POST',headers:{Authorization:`Bearer ${KV_TOKEN}`}});
+      await kvSet(mapKey, map, 259200);
     } catch {}
   }
   return map;
 }
 
 async function resolveHLTVPlayer(slug) {
+  // Level 1: hardcoded table — instant, 0 credits (covers all common DFS players)
+  const known = KNOWN_IDS[slug.toLowerCase()];
+  if (known) return known;
   const idKey = `hltv_id_${slug.toLowerCase()}`;
-  // Check individual cache first (7 days)
+  // Level 2: KV cache (instant if previously resolved)
   const cached = await kvGet(idKey);
   if (cached) return cached;
-  // Build/fetch bulk map (1 credit per 3 days, no render=true)
+  // Level 3: bulk map fetch (1 credit, cached 3 days)
   const map = await getPlayerIdMap();
   const found = map[slug.toLowerCase()];
   if (!found) throw new Error(`"${slug}" not found — try searching their exact HLTV name`);
   // Cache individual player 7 days
   try {
-    await fetch(`${KV_URL}/setex/${encodeURIComponent(idKey)}/604800/${encodeURIComponent(JSON.stringify(found))}`,
-      {method:'POST',headers:{Authorization:`Bearer ${KV_TOKEN}`}});
+    await kvSet(idKey, found, 604800);
   } catch {}
   return found;
 }
 
 // MAX 3 HS map fetches — 3 credits per player vs 20 before
-const MAX_HS = 6;
+const MAX_HS = 4;
 
 async function fetchMatchHeadshots(matchUrl, playerSlug) {
   try {
@@ -281,7 +310,8 @@ export default async function handler(req, res) {
         }
 
         const games=groupIntoSeries(rawMaps).slice(0,40);
-        kvSet(cacheKey, games);
+        // HS cached 7 days, kills cached 24hr
+        await kvSet(cacheKey, games, isHS ? 604800 : CACHE_TTL);
         return res.json({ games });
       }
 
