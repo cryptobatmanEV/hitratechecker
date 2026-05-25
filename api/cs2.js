@@ -10,12 +10,14 @@ const KV_TOKEN    = process.env.KV_REST_API_TOKEN;
 // Player ID lookups cached 7 days (HLTV IDs never change)
 const CACHE_TTL = 60 * 60 * 24; // 24 hours for gamelog data
 
+const KV_TIMEOUT = 2000;
+const kvRace = p => Promise.race([p, new Promise(r=>setTimeout(r,KV_TIMEOUT))]);
+
 async function kvGet(key) {
   if (!KV_URL) return null;
   try {
-    const r = await fetch(`${KV_URL}/get/${encodeURIComponent(key)}`, {
-      headers: { Authorization: `Bearer ${KV_TOKEN}` }
-    });
+    const r = await kvRace(fetch(`${KV_URL}/get/${encodeURIComponent(key)}`,{headers:{Authorization:`Bearer ${KV_TOKEN}`}}));
+    if (!r) return null;
     const d = await r.json();
     return d.result ? JSON.parse(d.result) : null;
   } catch { return null; }
@@ -24,11 +26,7 @@ async function kvGet(key) {
 async function kvSet(key, val, ttl=CACHE_TTL) {
   if (!KV_URL) return;
   try {
-    await fetch(KV_URL, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${KV_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(['SETEX', key, ttl, JSON.stringify(val)])
-    });
+    await kvRace(fetch(KV_URL,{method:'POST',headers:{Authorization:`Bearer ${KV_TOKEN}`,'Content-Type':'application/json'},body:JSON.stringify(['SETEX',key,ttl,JSON.stringify(val)])}));
   } catch {}
 }
 
