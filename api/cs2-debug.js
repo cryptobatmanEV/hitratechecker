@@ -1,57 +1,53 @@
 export const config = { maxDuration: 30 };
-const SCRAPER = process.env.SCRAPER_API_KEY;
 const KEY = process.env.GRID_API_KEY;
 const CD = 'https://api-op.grid.gg/central-data/graphql';
+const SS = 'https://api-op.grid.gg/live-data-feed/series-state/graphql';
 async function cdQ(q){const r=await fetch(CD,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':KEY},body:JSON.stringify({query:q})});return r.json();}
+async function ssQ(q){const r=await fetch(SS,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':KEY},body:JSON.stringify({query:q})});return r.json();}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const out = {};
 
-  // 1. Check HLTV K-D cell RAW HTML — does it contain HS in any span?
-  const html = await fetch(
-    `https://api.scraperapi.com?api_key=${SCRAPER}&url=${encodeURIComponent('https://www.hltv.org/stats/players/matches/3741/NiKo?startDate=2026-01-01&endDate=2026-05-26')}`,
-    {headers:{Accept:'text/html'}}
-  ).then(r=>r.text());
+  // 1. Find Nemiga's GRID team ID
+  const r1 = await cdQ(`{ teams(filter:{name:{contains:"Nemiga"}},first:5){ edges{node{id name}} } }`);
+  out.nemiga = r1?.data?.teams?.edges?.map(e=>e.node)||[];
+  const nemigaId = out.nemiga[0]?.id;
 
-  const tMatch = html.match(/<table[^>]*stats-matches-table[^>]*>([\s\S]*?)<\/table>/i);
-  if (tMatch) {
-    // Get all rows
-    const rowRx = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-    const rows = []; let m;
-    while((m=rowRx.exec(tMatch[1]))!==null) {
-      if(!/<th/i.test(m[1])) rows.push(m[1]);
-      if(rows.length >= 3) break;
-    }
-    // Show FULL raw HTML of the K-D cell for first 3 rows
-    rows.forEach((row, i) => {
-      const cellRx = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-      const cells = []; let cm;
-      while((cm=cellRx.exec(row))!==null) cells.push(cm[1]);
-      out[`row${i+1}_kd_raw`] = cells[4] || 'n/a'; // raw HTML, no stripping
-      out[`row${i+1}_kd_stripped`] = (cells[4]||'').replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim();
-    });
+  // 2. Get ALL series for Nemiga in May 2026 — if GRID has Cybershoke vs Nemiga it'll appear
+  if (nemigaId) {
+    const r2 = await cdQ(`{
+      allSeries(filter:{
+        teamIds:{in:["${nemigaId}"]}
+        startTimeScheduled:{gte:"2026-04-25T00:00:00Z"}
+      }, first:30, orderBy:StartTimeScheduled) {
+        edges{node{id startTimeScheduled tournament{id name} teams{baseInfo{id name}}}}
+      }
+    }`);
+    out.nemiga_recent_series = r2?.data?.allSeries?.edges?.map(e=>e.node)?.map(s=>({
+      date: s.startTimeScheduled?.split('T')[0],
+      tournament: s.tournament?.name,
+      id: s.id,
+      teams: s.teams?.map(t=>t.baseInfo?.name)
+    }))||[];
   }
 
-  // 2. Search GRID for BC Game Masters variants
-  const searches = ['BC.Game','BCGame','BC Game','Masters Europe','Betway Masters','ESL Masters'];
-  for (const term of searches) {
-    const r = await cdQ(`{ tournaments(filter:{name:{contains:"${term}"}},first:3){ edges{node{id name startDate}} } }`);
-    const results = r?.data?.tournaments?.edges?.map(e=>e.node)||[];
-    if (results.length) out[`grid_"${term}"`] = results;
-  }
-
-  // 3. Also search for the specific May 2026 Cybershoke series in GRID that match HLTV dates
-  // HLTV shows Cybershoke vs Nemiga on 10/05/2026 — does GRID have a series around that date?
-  const r = await cdQ(`{
-    allSeries(filter:{
-      teamIds:{in:["52247"]}
-      startTimeScheduled:{gte:"2026-05-01T00:00:00Z"}
-    }, first:20, orderBy:StartTimeScheduled) {
-      edges{node{id startTimeScheduled tournament{id name}}}
+  // 3. Get ALL CS2 tournaments in GRID from 2026 — see the full list
+  const r3 = await cdQ(`{
+    tournaments(filter:{name:{contains:"2026"}}, first:50) {
+      edges{node{id name startDate}}
     }
   }`);
-  out.cybershoke_may2026 = r?.data?.allSeries?.edges?.map(e=>e.node)||[];
+  out.all_2026_tournaments = r3?.data?.tournaments?.edges?.map(e=>e.node)||[];
+
+  // 4. Check if "Masters" alone finds BC Game Masters
+  const r4 = await cdQ(`{
+    tournaments(filter:{name:{contains:"Masters"}}, first:20) {
+      edges{node{id name startDate}}
+    }
+  }`);
+  out.masters_tournaments = r4?.data?.tournaments?.edges?.map(e=>e.node)
+    ?.filter(t => new Date(t.startDate) > new Date('2025-01-01'))||[];
 
   return res.json(out);
 }
