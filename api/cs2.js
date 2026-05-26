@@ -189,6 +189,49 @@ async function resolveHLTV(slug) {
   throw new Error(`"${slug}" not found`);
 }
 
+// ── GRID-ONLY FALLBACK (when ScraperAPI credits are exhausted) ───────────────
+async function getGridOnlyGames(teamId, slug) {
+  try {
+    const oneYearAgo = new Date(Date.now()-365*86400000).toISOString();
+    const cd = await cdQ(`{
+      allSeries(filter:{teamIds:{in:["${teamId}"]},startTimeScheduled:{gte:"${oneYearAgo}"}},first:50,orderBy:StartTimeScheduled){
+        edges{node{id startTimeScheduled}}
+      }
+    }`);
+    const ids = (cd?.data?.allSeries?.edges||[])
+      .map(e=>e.node).sort((a,b)=>new Date(b.startTimeScheduled)-new Date(a.startTimeScheduled))
+      .slice(0,15).map(s=>s.id);
+    if(!ids.length) return [];
+
+    const batchQuery = `{
+      ${ids.map((id,i)=>`s${i}:seriesState(id:"${id}"){
+        id startedAt finished
+        teams{id name won score players{${SP_FIELDS}}}
+        games{sequenceNumber finished map{name} teams{id name won players{${GP_FIELDS}}}}
+      }`).join('
+')}
+    }`;
+    const batch = await ssQ(batchQuery);
+    if(!batch?.data) return [];
+
+    return Object.values(batch.data).filter(Boolean).map(s=>{
+      const found = findPlayer(s, slug);
+      if(!found) return null;
+      const {player,team,opp} = found;
+      const maps = (s.games||[]).sort((a,b)=>(a.sequenceNumber||0)-(b.sequenceNumber||0)).map(g=>{
+        const gt=g.teams?.find(t=>t.id===team.id);
+        const gp=gt?.players?.find(p=>p.name?.toLowerCase().includes(slug));
+        return {kills:gp?.kills||0,deaths:gp?.deaths||0,assists:gp?.killAssistsGiven||0,headshots:gp?.headshots||0,map:g.map?.name||''};
+      });
+      return {
+        kills:player.kills||0,deaths:player.deaths||0,assists:player.killAssistsGiven||0,
+        headshots:player.headshots||0,win:team.won,maps,
+        _date:s.startedAt?.split('T')[0]||'',_opp:opp
+      };
+    }).filter(Boolean).sort((a,b)=>new Date(b._date)-new Date(a._date));
+  } catch { return []; }
+}
+
 // ── HANDLER ───────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
@@ -231,29 +274,34 @@ export default async function handler(req, res) {
       const gridId=parts[1], teamId=parts[2], nickname=parts.slice(3).join('_');
       const slug=nickname.toLowerCase();
 
-      if(!SCRAPER) return res.status(500).json({error:'SCRAPER_API_KEY not set'});
-
-      // Cache check — 24hr TTL, saves 1 credit on repeat lookups
+      // Cache check — 24hr TTL, saves credits on repeat lookups
       const today = new Date().toISOString().split('T')[0];
       const cacheKey = `cs2_${playerId}_${today}`;
       const cached = await kvGet(cacheKey);
       if (cached) return res.json({games: cached});
 
-      // Step 1: HLTV stats page → COMPLETE game log (every match, kills/deaths)
-      const player=await resolveHLTV(slug);
-      const end=new Date().toISOString().split('T')[0];
-      const start=new Date(Date.now()-365*86400000).toISOString().split('T')[0];
-      const html=await scraperFetch(`https://www.hltv.org/stats/players/matches/${player.id}/${player.slug}?startDate=${start}&endDate=${end}`);
-      const rawMaps=parseHLTVMatches(html);
-      if(!rawMaps.length) return res.status(404).json({error:`No data for ${slug}`});
-      const games=groupIntoSeries(rawMaps).slice(0,40);
-
-      // Step 2: GRID Series State → HS + assists enrichment (free, best-effort)
-      if(GRID && teamId && teamId!=='0') {
-        await enrichWithGridHS(games, teamId, slug);
+      // Try HLTV first (complete coverage: every match, exact kills)
+      // If ScraperAPI credits run out, auto-fall back to GRID-only (never goes down)
+      let games;
+      try {
+        if(!SCRAPER) throw new Error('no scraper key');
+        const player=await resolveHLTV(slug);
+        const end=new Date().toISOString().split('T')[0];
+        const start=new Date(Date.now()-365*86400000).toISOString().split('T')[0];
+        const html=await scraperFetch(`https://www.hltv.org/stats/players/matches/${player.id}/${player.slug}?startDate=${start}&endDate=${end}`);
+        const rawMaps=parseHLTVMatches(html);
+        if(!rawMaps.length) throw new Error('no hltv data');
+        games=groupIntoSeries(rawMaps).slice(0,40);
+        // Enrich with GRID HS (free, best-effort)
+        if(GRID && teamId && teamId!=='0') await enrichWithGridHS(games, teamId, slug);
+      } catch(scraperErr) {
+        // ScraperAPI failed (credits gone, key expired) — fall back to GRID-only
+        // Less coverage but tool stays live
+        if(!GRID || !teamId || teamId==='0') return res.status(503).json({error:'No data sources available'});
+        games = await getGridOnlyGames(teamId, slug);
+        if(!games.length) return res.status(404).json({error:`No data for ${slug}`});
       }
 
-      // Cache result for 24hr — same player next lookup = 0 credits
       await kvSet(cacheKey, games);
       return res.json({games});
     }
