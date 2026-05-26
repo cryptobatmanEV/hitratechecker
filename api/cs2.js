@@ -206,8 +206,8 @@ async function getGridOnlyGames(teamId, slug) {
     const batchQuery = `{
       ${ids.map((id,i)=>`s${i}:seriesState(id:"${id}"){
         id startedAt finished
-        teams{id name won score players{${SP_FIELDS}}}
-        games{sequenceNumber finished map{name} teams{id name won players{${GP_FIELDS}}}}
+        teams{id name won score players{${SP}}}
+        games{sequenceNumber finished map{name} teams{id name won players{${GP}}}}
       }`).join('
 ')}
     }`;
