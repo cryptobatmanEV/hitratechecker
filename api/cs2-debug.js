@@ -9,40 +9,39 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const out = {};
 
-  // 1. Try latestSeriesStateByPlayerId with Steam ID
-  const r1 = await ssQ(`{ latestSeriesStateByPlayerId(id:"76561198174263909") {
+  // 1. Does GRID have BC Game Masters in Central Data?
+  const r1 = await cdQ(`{ tournaments(filter:{name:{contains:"BC Game"}},first:5){ edges{node{id name startDate}} } }`);
+  out.bcgame_tournaments = r1?.data?.tournaments?.edges?.map(e=>e.node) || [];
+
+  // 2. Does GRID have WINLINE events?
+  const r2 = await cdQ(`{ tournaments(filter:{name:{contains:"WINLINE"}},first:5){ edges{node{id name startDate}} } }`);
+  out.winline_tournaments = r2?.data?.tournaments?.edges?.map(e=>e.node) || [];
+
+  // 3. Does GRID have CCT events (we know they do)?
+  const r3 = await cdQ(`{ tournaments(filter:{name:{contains:"CCT"}},first:3){ edges{node{id name startDate}} } }`);
+  out.cct_tournaments = r3?.data?.tournaments?.edges?.map(e=>e.node) || [];
+
+  // 4. allSeries for Cybershoke 52247 — show ALL recent series with tournaments
+  // to see which ones glowiing might be in
+  const sixMonthsAgo = new Date(Date.now()-180*86400000).toISOString();
+  const r4 = await cdQ(`{
+    allSeries(filter:{teamIds:{in:["52247"]}, startTimeScheduled:{gte:"${sixMonthsAgo}"}}, first:50, orderBy:StartTimeScheduled) {
+      edges{node{id startTimeScheduled tournament{name}}}
+    }
+  }`);
+  const all = r4?.data?.allSeries?.edges?.map(e=>e.node)||[];
+  out.allCybershokeSeries = all.map(s=>({
+    date: s.startTimeScheduled?.split('T')[0],
+    tournament: s.tournament?.name,
+    id: s.id
+  }));
+
+  // 5. Try latestSeriesStateByPlayerId with GRID player ID (not Steam)
+  const r5 = await ssQ(`{ latestSeriesStateByPlayerId(id:"116103") {
     id startedAt
-    teams { id name players { id name kills ... on SeriesPlayerStateCs2 { headshots } } }
+    teams { name players { id name kills } }
   }}`);
-  out.latestBySteamId = r1?.data?.latestSeriesStateByPlayerId || r1?.errors?.[0]?.message;
-
-  // 2. Look up glowiing's teammates (Mokuj1n, fluffy, bl1x1) in GRID to find real team
-  const teammates = ['Mokuj1n', 'fluffy', 'bl1x1', 'alpha'];
-  const teamLookups = await Promise.all(teammates.map(nick =>
-    cdQ(`{ players(filter:{nickname:{equals:"${nick}"}},first:5){
-      edges{node{id nickname title{id} team{id name}}}
-    }}`)
-  ));
-  out.teammates = teammates.map((nick, i) => {
-    const profiles = teamLookups[i]?.data?.players?.edges?.map(e=>e.node)||[];
-    const cs2 = profiles.find(p=>p.title?.id==='28') || profiles[0];
-    return { nick, gridId: cs2?.id, teamId: cs2?.team?.id, teamName: cs2?.team?.name };
-  });
-
-  // 3. If teammates share a team, get recent series for that team
-  const realTeamId = out.teammates.find(t => t.teamId)?.teamId;
-  out.realTeamId = realTeamId;
-  if (realTeamId && realTeamId !== '52247') {
-    const sixMonthsAgo = new Date(Date.now()-180*86400000).toISOString();
-    const r3 = await cdQ(`{
-      allSeries(filter:{teamIds:{in:["${realTeamId}"]}, startTimeScheduled:{gte:"${sixMonthsAgo}"}}, first:50, orderBy:StartTimeScheduled) {
-        edges{node{id startTimeScheduled tournament{name}}}
-      }
-    }`);
-    const s = r3?.data?.allSeries?.edges?.map(e=>e.node)||[];
-    out.realTeamSeriesCount = s.length;
-    out.realTeamRecent3 = s.slice(-3).reverse();
-  }
+  out.latestByGridId = r5?.data?.latestSeriesStateByPlayerId || r5?.errors?.[0]?.message;
 
   return res.json(out);
 }
