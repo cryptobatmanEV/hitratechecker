@@ -6,48 +6,44 @@ async function cdQ(q){const r=await fetch(CD,{method:'POST',headers:{'Content-Ty
 async function ssQ(q){const r=await fetch(SS,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':KEY},body:JSON.stringify({query:q})});return r.json();}
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // 1. Find Nemiga's GRID team ID
-  const r1 = await cdQ(`{ teams(filter:{name:{contains:"Nemiga"}},first:5){ edges{node{id name}} } }`);
-  out.nemiga = r1?.data?.teams?.edges?.map(e=>e.node)||[];
-  const nemigaId = out.nemiga[0]?.id;
+  // 1. Find Swisher in GRID
+  const r1 = await cdQ(`{players(filter:{nickname:{equals:"Swisher"}},first:5){edges{node{id nickname title{id} team{id name}}}}}`);
+  out.swisher = r1?.data?.players?.edges?.map(e=>e.node)||[];
+  const cs2Profile = out.swisher.find(p=>p.title?.id==='28') || out.swisher[0];
+  const teamId = cs2Profile?.team?.id;
+  out.teamId = teamId;
+  out.teamName = cs2Profile?.team?.name;
 
-  // 2. Get ALL series for Nemiga in May 2026 — if GRID has Cybershoke vs Nemiga it'll appear
-  if (nemigaId) {
+  // 2. Get M80's recent series from CD around May 20-21
+  if (teamId) {
     const r2 = await cdQ(`{
       allSeries(filter:{
-        teamIds:{in:["${nemigaId}"]}
-        startTimeScheduled:{gte:"2026-04-25T00:00:00Z"}
-      }, first:30, orderBy:StartTimeScheduled) {
-        edges{node{id startTimeScheduled tournament{id name} teams{baseInfo{id name}}}}
+        teamIds:{in:["${teamId}"]}
+        startTimeScheduled:{gte:"2026-05-01T00:00:00Z"}
+      }, first:20, orderBy:StartTimeScheduled) {
+        edges{node{id startTimeScheduled tournament{name} teams{baseInfo{name}}}}
       }
     }`);
-    out.nemiga_recent_series = r2?.data?.allSeries?.edges?.map(e=>e.node)?.map(s=>({
-      date: s.startTimeScheduled?.split('T')[0],
-      tournament: s.tournament?.name,
-      id: s.id,
-      teams: s.teams?.map(t=>t.baseInfo?.name)
+    out.m80_may_series = r2?.data?.allSeries?.edges?.map(e=>({
+      id: e.node.id,
+      date: e.node.startTimeScheduled?.split('T')[0],
+      tournament: e.node.tournament?.name,
+      teams: e.node.teams?.map(t=>t.baseInfo?.name)
     }))||[];
   }
 
-  // 3. Get ALL CS2 tournaments in GRID from 2026 — see the full list
-  const r3 = await cdQ(`{
-    tournaments(filter:{name:{contains:"2026"}}, first:50) {
-      edges{node{id name startDate}}
-    }
-  }`);
-  out.all_2026_tournaments = r3?.data?.tournaments?.edges?.map(e=>e.node)||[];
-
-  // 4. Check if "Masters" alone finds BC Game Masters
-  const r4 = await cdQ(`{
-    tournaments(filter:{name:{contains:"Masters"}}, first:20) {
-      edges{node{id name startDate}}
-    }
-  }`);
-  out.masters_tournaments = r4?.data?.tournaments?.edges?.map(e=>e.node)
-    ?.filter(t => new Date(t.startDate) > new Date('2025-01-01'))||[];
+  // 3. Try Series State for a May 20-21 series if found
+  if (out.m80_may_series?.length) {
+    const seriesId = out.m80_may_series[0]?.id;
+    const r3 = await ssQ(`{seriesState(id:"${seriesId}"){
+      id startedAt
+      teams{id name players{id name kills ...on SeriesPlayerStateCs2{headshots} ...on SeriesPlayerStateCsgo{headshots}}}
+    }}`);
+    out.series_state_sample = r3?.data?.seriesState || r3?.errors?.[0]?.message;
+  }
 
   return res.json(out);
 }
