@@ -89,6 +89,15 @@ function groupIntoSeries(maps){
   return series;
 }
 
+// Find player across all teams in a series state by name match
+function findPlayer(seriesState, slug) {
+  for (const team of seriesState.teams || []) {
+    const player = team.players?.find(p => p.name?.toLowerCase().includes(slug));
+    if (player) return { player, team, opp: seriesState.teams.find(t=>t.id!==team.id)?.name||'?' };
+  }
+  return null;
+}
+
 // ── GRID HS enrichment ────────────────────────────────────────────────────────
 const SP=`id name kills killAssistsGiven ... on SeriesPlayerStateCs2{headshots} ... on SeriesPlayerStateCsgo{headshots}`;
 const GP=`id name kills ... on GamePlayerStateCs2{headshots} ... on GamePlayerStateCsgo{headshots}`;
@@ -280,26 +289,29 @@ export default async function handler(req, res) {
       const cached = await kvGet(cacheKey);
       if (cached) return res.json({games: cached});
 
-      // Try HLTV first (complete coverage: every match, exact kills)
-      // If ScraperAPI credits run out, auto-fall back to GRID-only (never goes down)
-      let games;
-      try {
-        if(!SCRAPER) throw new Error('no scraper key');
-        const player=await resolveHLTV(slug);
-        const end=new Date().toISOString().split('T')[0];
-        const start=new Date(Date.now()-365*86400000).toISOString().split('T')[0];
-        const html=await scraperFetch(`https://www.hltv.org/stats/players/matches/${player.id}/${player.slug}?startDate=${start}&endDate=${end}`);
-        const rawMaps=parseHLTVMatches(html);
-        if(!rawMaps.length) throw new Error('no hltv data');
-        games=groupIntoSeries(rawMaps).slice(0,40);
-        // Enrich with GRID HS (free, best-effort)
-        if(GRID && teamId && teamId!=='0') await enrichWithGridHS(games, teamId, slug);
-      } catch(scraperErr) {
-        // ScraperAPI failed (credits gone, key expired) — fall back to GRID-only
-        // Less coverage but tool stays live
-        if(!GRID || !teamId || teamId==='0') return res.status(503).json({error:'No data sources available'});
+      // Step 1: HLTV — complete game log, exact kills for every match
+      let games = [];
+      if(SCRAPER) {
+        try {
+          const player = await resolveHLTV(slug);
+          const end = new Date().toISOString().split('T')[0];
+          const start = new Date(Date.now()-365*86400000).toISOString().split('T')[0];
+          const html = await scraperFetch(`https://www.hltv.org/stats/players/matches/${player.id}/${player.slug}?startDate=${start}&endDate=${end}`);
+          const rawMaps = parseHLTVMatches(html);
+          games = groupIntoSeries(rawMaps).slice(0,40);
+        } catch(e) { /* HLTV failed — fall through to GRID */ }
+      }
+
+      // Step 2: If HLTV failed or no key, use GRID-only (kills + HS, less coverage)
+      if(!games.length && GRID && teamId && teamId!=='0') {
         games = await getGridOnlyGames(teamId, slug);
-        if(!games.length) return res.status(404).json({error:`No data for ${slug}`});
+      }
+
+      if(!games.length) return res.status(404).json({error:`No data found for ${slug}`});
+
+      // Step 3: Enrich HLTV kills with GRID HS (free, best-effort, separate from steps 1/2)
+      if(games.length && GRID && teamId && teamId!=='0') {
+        await enrichWithGridHS(games, teamId, slug);
       }
 
       await kvSet(cacheKey, games);
