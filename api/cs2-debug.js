@@ -9,41 +9,35 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // 1. Find Swisher in GRID
-  const r1 = await cdQ(`{players(filter:{nickname:{equals:"Swisher"}},first:5){edges{node{id nickname title{id} team{id name}}}}}`);
-  out.swisher = r1?.data?.players?.edges?.map(e=>e.node)||[];
-  const cs2Profile = out.swisher.find(p=>p.title?.id==='28') || out.swisher[0];
-  const teamId = cs2Profile?.team?.id;
-  out.teamId = teamId;
-  out.teamName = cs2Profile?.team?.name;
+  // 1. Check IEM Atlanta 2026 playoffs - does GRID have it?
+  const r1 = await cdQ(`{tournaments(filter:{name:{contains:"IEM Atlanta 2026"}},first:10){edges{node{id name startDate}}}}`);
+  out.iem_atlanta_tournaments = r1?.data?.tournaments?.edges?.map(e=>e.node)||[];
 
-  // 2. Get M80's recent series from CD around May 20-21
-  if (teamId) {
-    const r2 = await cdQ(`{
-      allSeries(filter:{
-        teamIds:{in:["${teamId}"]}
-        startTimeScheduled:{gte:"2026-05-01T00:00:00Z"}
-      }, first:20, orderBy:StartTimeScheduled) {
-        edges{node{id startTimeScheduled tournament{name} teams{baseInfo{name}}}}
-      }
-    }`);
-    out.m80_may_series = r2?.data?.allSeries?.edges?.map(e=>({
-      id: e.node.id,
-      date: e.node.startTimeScheduled?.split('T')[0],
-      tournament: e.node.tournament?.name,
-      teams: e.node.teams?.map(t=>t.baseInfo?.name)
-    }))||[];
-  }
+  // 2. Get M80 IEM Atlanta series specifically
+  const r2 = await cdQ(`{
+    allSeries(filter:{
+      teamIds:{in:["52200"]}
+      startTimeScheduled:{gte:"2026-05-10T00:00:00Z", lte:"2026-05-25T00:00:00Z"}
+    }, first:20, orderBy:StartTimeScheduled) {
+      edges{node{id startTimeScheduled tournament{id name} teams{baseInfo{name}}}}
+    }
+  }`);
+  out.m80_mid_may = r2?.data?.allSeries?.edges?.map(e=>e.node)?.map(s=>({
+    id:s.id, date:s.startTimeScheduled?.split('T')[0],
+    tournament:s.tournament?.name, teams:s.teams?.map(t=>t.baseInfo?.name)
+  }))||[];
 
-  // 3. Try Series State for a May 20-21 series if found
-  if (out.m80_may_series?.length) {
-    const seriesId = out.m80_may_series[0]?.id;
-    const r3 = await ssQ(`{seriesState(id:"${seriesId}"){
-      id startedAt
-      teams{id name players{id name kills ...on SeriesPlayerStateCs2{headshots} ...on SeriesPlayerStateCsgo{headshots}}}
-    }}`);
-    out.series_state_sample = r3?.data?.seriesState || r3?.errors?.[0]?.message;
-  }
+  // 3. Check if IEM Atlanta Group Stage series HAS player data (not empty)
+  const iem_series = ['2944380','2944388']; // M80 vs Legacy, M80 vs Liquid
+  const r3 = await ssQ(`{
+    s0:seriesState(id:"2944380"){id startedAt teams{name players{id name kills ...on SeriesPlayerStateCs2{headshots}}}}
+    s1:seriesState(id:"2944388"){id startedAt teams{name players{id name kills ...on SeriesPlayerStateCs2{headshots}}}}
+  }`);
+  out.iem_atlanta_states = Object.values(r3?.data||{}).map(s=>({
+    id:s?.id, date:s?.startedAt?.split('T')[0],
+    team1: {name:s?.teams?.[0]?.name, playerCount:s?.teams?.[0]?.players?.length, sample:s?.teams?.[0]?.players?.[0]},
+    team2: {name:s?.teams?.[1]?.name, playerCount:s?.teams?.[1]?.players?.length, sample:s?.teams?.[1]?.players?.[0]}
+  }));
 
   return res.json(out);
 }
