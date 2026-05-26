@@ -1,47 +1,48 @@
 export const config = { maxDuration: 30 };
-const KEY = process.env.GRID_API_KEY;
-const CD = 'https://api-op.grid.gg/central-data/graphql';
-const SS = 'https://api-op.grid.gg/live-data-feed/series-state/graphql';
-async function cdQ(q){const r=await fetch(CD,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':KEY},body:JSON.stringify({query:q})});return r.json();}
-async function ssQ(q){const r=await fetch(SS,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':KEY},body:JSON.stringify({query:q})});return r.json();}
+const SCRAPER = process.env.SCRAPER_API_KEY;
+
+async function fetch_url(url) {
+  const r = await fetch(`https://api.scraperapi.com?api_key=${SCRAPER}&url=${encodeURIComponent(url)}`, {headers:{Accept:'text/html'}});
+  return r.text();
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const out = {};
 
-  // 1. Does GRID have BC Game Masters in Central Data?
-  const r1 = await cdQ(`{ tournaments(filter:{name:{contains:"BC Game"}},first:5){ edges{node{id name startDate}} } }`);
-  out.bcgame_tournaments = r1?.data?.tournaments?.edges?.map(e=>e.node) || [];
+  // Test if HLTV detailed stats page includes HS in the table
+  // glowiing HLTV ID: need to find it first, using known player NiKo (3741) as test
+  const urls = [
+    // Standard matches page
+    'https://www.hltv.org/stats/players/matches/3741/NiKo?startDate=2026-01-01&endDate=2026-05-26',
+    // Try with detailedStats or similar params
+    'https://www.hltv.org/stats/players/matches/3741/NiKo?startDate=2026-01-01&endDate=2026-05-26&detailedStats=1',
+  ];
 
-  // 2. Does GRID have WINLINE events?
-  const r2 = await cdQ(`{ tournaments(filter:{name:{contains:"WINLINE"}},first:5){ edges{node{id name startDate}} } }`);
-  out.winline_tournaments = r2?.data?.tournaments?.edges?.map(e=>e.node) || [];
-
-  // 3. Does GRID have CCT events (we know they do)?
-  const r3 = await cdQ(`{ tournaments(filter:{name:{contains:"CCT"}},first:3){ edges{node{id name startDate}} } }`);
-  out.cct_tournaments = r3?.data?.tournaments?.edges?.map(e=>e.node) || [];
-
-  // 4. allSeries for Cybershoke 52247 — show ALL recent series with tournaments
-  // to see which ones glowiing might be in
-  const sixMonthsAgo = new Date(Date.now()-180*86400000).toISOString();
-  const r4 = await cdQ(`{
-    allSeries(filter:{teamIds:{in:["52247"]}, startTimeScheduled:{gte:"${sixMonthsAgo}"}}, first:50, orderBy:StartTimeScheduled) {
-      edges{node{id startTimeScheduled tournament{name}}}
-    }
-  }`);
-  const all = r4?.data?.allSeries?.edges?.map(e=>e.node)||[];
-  out.allCybershokeSeries = all.map(s=>({
-    date: s.startTimeScheduled?.split('T')[0],
-    tournament: s.tournament?.name,
-    id: s.id
-  }));
-
-  // 5. Try latestSeriesStateByPlayerId with GRID player ID (not Steam)
-  const r5 = await ssQ(`{ latestSeriesStateByPlayerId(id:"116103") {
-    id startedAt
-    teams { name players { id name kills } }
-  }}`);
-  out.latestByGridId = r5?.data?.latestSeriesStateByPlayerId || r5?.errors?.[0]?.message;
+  for (const url of urls) {
+    const html = await fetch_url(url);
+    // Check table headers to see what columns exist
+    const tMatch = html.match(/<table[^>]*stats-matches-table[^>]*>([\s\S]*?)<\/table>/i);
+    if (!tMatch) { out[url] = 'no table'; continue; }
+    
+    // Get headers
+    const headers = [];
+    const hRx = /<th[^>]*>([\s\S]*?)<\/th>/gi; let hm;
+    while((hm=hRx.exec(tMatch[1]))!==null)
+      headers.push(hm[1].replace(/<[^>]+>/g,'').trim());
+    
+    // Get first data row raw (to see if HS is in K-D cell)
+    const firstRow = tMatch[1].match(/<tr[^>]*>([\s\S]*?)<\/tr>/i)?.[1]||'';
+    const cells = []; const cRx=/<td[^>]*>([\s\S]*?)<\/td>/gi; let cm;
+    while((cm=cRx.exec(firstRow))!==null) cells.push(cm[1]);
+    
+    out[url.includes('detailed') ? 'detailed' : 'standard'] = {
+      headers,
+      rawKDcell: cells[4] || 'n/a', // raw HTML of K-D cell
+      hasHS: html.includes('headshot') || html.includes('(hs)') || html.includes('K (HS)'),
+      hsInTable: tMatch[1].toLowerCase().includes('hs') || tMatch[1].toLowerCase().includes('headshot')
+    };
+  }
 
   return res.json(out);
 }
