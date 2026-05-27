@@ -217,8 +217,7 @@ async function getGridOnlyGames(teamId, slug) {
         id startedAt finished
         teams{id name won score players{${SP}}}
         games{sequenceNumber finished map{name} teams{id name won players{${GP}}}}
-      }`).join('
-')}
+      }`).join(' ')}
     }`;
     const batch = await ssQ(batchQuery);
     if(!batch?.data) return [];
