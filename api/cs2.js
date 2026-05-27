@@ -295,10 +295,18 @@ export default async function handler(req, res) {
         try {
           const player = await resolveHLTV(slug);
           const end = new Date().toISOString().split('T')[0];
-          const start = '2023-09-27'; // CS2 launch date — true lifetime stats, still 1 credit
-          const html = await scraperFetch(`https://www.hltv.org/stats/players/matches/${player.id}/${player.slug}?startDate=${start}&endDate=${end}`);
-          const rawMaps = parseHLTVMatches(html);
-          games = groupIntoSeries(rawMaps); // no cap — full history for lifetime stats
+          const start = '2023-09-27'; // CS2 launch date
+          const baseUrl = `https://www.hltv.org/stats/players/matches/${player.id}/${player.slug}?startDate=${start}&endDate=${end}`;
+          // HLTV paginates at 40 results — fetch all pages for true lifetime data
+          let allMaps = [];
+          for(let offset = 0; offset <= 400; offset += 40) {
+            const url = offset === 0 ? baseUrl : `${baseUrl}&offset=${offset}`;
+            const html = await scraperFetch(url);
+            const maps = parseHLTVMatches(html);
+            allMaps = allMaps.concat(maps);
+            if(maps.length < 40) break; // last page reached
+          }
+          games = groupIntoSeries(allMaps);
         } catch(e) { /* HLTV failed — fall through to GRID */ }
       }
 
