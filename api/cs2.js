@@ -105,16 +105,17 @@ const GP=`id name kills ... on GamePlayerStateCs2{headshots} ... on GamePlayerSt
 async function enrichWithGridHS(games, teamId, slug) {
   if (!GRID || !games.length) return;
   try {
-    const oneYearAgo = new Date(Date.now()-365*86400000).toISOString();
+    // 90-day window ensures first:50 always captures the most recent matches
+    const ninetyDaysAgo = new Date(Date.now()-90*86400000).toISOString();
     const cd = await cdQ(`{
-      allSeries(filter:{teamIds:{in:["${teamId}"]},startTimeScheduled:{gte:"${oneYearAgo}"}},first:50,orderBy:StartTimeScheduled){
+      allSeries(filter:{teamIds:{in:["${teamId}"]},startTimeScheduled:{gte:"${ninetyDaysAgo}"}},first:50,orderBy:StartTimeScheduled){
         edges{node{id startTimeScheduled}}
       }
     }`);
     const seriesIds = (cd?.data?.allSeries?.edges||[])
       .map(e=>e.node).filter(s=>s.startTimeScheduled)
       .sort((a,b)=>new Date(b.startTimeScheduled)-new Date(a.startTimeScheduled))
-      .slice(0,20).map(s=>s.id);
+      .slice(0,15).map(s=>s.id);
     if(!seriesIds.length) return;
 
     const batch = await ssQ(`{
@@ -294,10 +295,10 @@ export default async function handler(req, res) {
         try {
           const player = await resolveHLTV(slug);
           const end = new Date().toISOString().split('T')[0];
-          const start = new Date(Date.now()-365*86400000).toISOString().split('T')[0];
+          const start = '2023-09-27'; // CS2 launch date — true lifetime stats, still 1 credit
           const html = await scraperFetch(`https://www.hltv.org/stats/players/matches/${player.id}/${player.slug}?startDate=${start}&endDate=${end}`);
           const rawMaps = parseHLTVMatches(html);
-          games = groupIntoSeries(rawMaps).slice(0,40);
+          games = groupIntoSeries(rawMaps); // no cap — full history for lifetime stats
         } catch(e) { /* HLTV failed — fall through to GRID */ }
       }
 
