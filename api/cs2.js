@@ -105,61 +105,91 @@ const GP=`id name kills ... on GamePlayerStateCs2{headshots} ... on GamePlayerSt
 async function enrichWithGridHS(games, teamId, slug) {
   if (!GRID || !games.length) return;
   try {
-    // 90-day window ensures first:50 always captures the most recent matches
     const ninetyDaysAgo = new Date(Date.now()-90*86400000).toISOString();
-    const cd = await cdQ(`{
-      allSeries(filter:{teamIds:{in:["${teamId}"]},startTimeScheduled:{gte:"${ninetyDaysAgo}"}},first:50,orderBy:StartTimeScheduled){
-        edges{node{id startTimeScheduled}}
-      }
-    }`);
+    const toISO = d => d?.match(/^(\d{2})\/(\d{2})\/(\d{2})$/)
+      ? `20${d.slice(6)}-${d.slice(3,5)}-${d.slice(0,2)}` : d;
+
+    // ── Pass 1: team-based enrichment (current team) ─────────────────────────
+    const cd = await cdQ(`{allSeries(filter:{teamIds:{in:["${teamId}"]},startTimeScheduled:{gte:"${ninetyDaysAgo}"}},first:50,orderBy:StartTimeScheduled){edges{node{id startTimeScheduled}}}}`);
     const seriesIds = (cd?.data?.allSeries?.edges||[])
       .map(e=>e.node).filter(s=>s.startTimeScheduled)
       .sort((a,b)=>new Date(b.startTimeScheduled)-new Date(a.startTimeScheduled))
       .slice(0,15).map(s=>s.id);
-    if(!seriesIds.length) return;
 
-    const batch = await ssQ(`{
-      ${seriesIds.map((id,i)=>`s${i}:seriesState(id:"${id}"){
-        id startedAt teams{id name won players{${SP}}
-        } games{sequenceNumber map{name} teams{id players{${GP}}}}
-      }`).join('\n')}
-    }`);
-    if(!batch?.data) return;
-
-    // Build a date-keyed map of GRID HS data
     const gridByDate={};
-    for(const s of Object.values(batch.data)) {
-      if(!s) continue;
-      // Find our player in any team
-      for(const team of s.teams||[]) {
-        const player=team.players?.find(p=>p.name?.toLowerCase().includes(slug));
-        if(!player) continue;
-        const opp=s.teams.find(t=>t.id!==team.id)?.name||'';
-        const date=s.startedAt?.split('T')[0];
-        if(!date) continue;
-        const mapHS={};
-        for(const g of s.games||[]) {
-          const gt=g.teams?.find(t=>t.id===team.id);
-          const gp=gt?.players?.find(p=>p.name?.toLowerCase().includes(slug));
-          if(gp) mapHS[g.sequenceNumber]={hs:gp.headshots||0};
+
+    if(seriesIds.length) {
+      const batchQ = `{${seriesIds.map((id,i)=>`s${i}:seriesState(id:"${id}"){id startedAt teams{id name won players{${SP}}} games{sequenceNumber map{name} teams{id players{${GP}}}}}`).join(' ')}}`;
+      const batch = await ssQ(batchQ);
+      if(batch?.data) {
+        for(const s of Object.values(batch.data)) {
+          if(!s) continue;
+          for(const team of s.teams||[]) {
+            const player=team.players?.find(p=>p.name?.toLowerCase().includes(slug));
+            if(!player) continue;
+            const date=s.startedAt?.split('T')[0];
+            if(!date) continue;
+            const mapHS={};
+            for(const g of s.games||[]) {
+              const gt=g.teams?.find(t=>t.id===team.id);
+              const gp=gt?.players?.find(p=>p.name?.toLowerCase().includes(slug));
+              if(gp) mapHS[g.sequenceNumber]={hs:gp.headshots||0};
+            }
+            gridByDate[date]={hs:player.headshots||0,assists:player.killAssistsGiven||0,mapHS,won:team.won};
+            break;
+          }
         }
-        gridByDate[date]={hs:player.headshots||0,assists:player.killAssistsGiven||0,mapHS,won:team.won};
-        break;
       }
     }
 
-    // Enrich HLTV games with GRID HS data
+    // ── Pass 2: opponent-based fallback for team changes ──────────────────────
+    // Handles players who changed teams — finds historical series by opponent+date
+    const uncovered = games.filter(g=>!gridByDate[toISO(g._date)]&&g._opp).slice(0,8);
+    if(uncovered.length) {
+      await Promise.all(uncovered.map(async game=>{
+        try{
+          const isoDate=toISO(game._date);
+          const oppSearch=game._opp.replace(/['"\\]/g,'').substring(0,12);
+          // Find opponent team in GRID
+          const oppQ=await cdQ(`{teams(filter:{name:{contains:"${oppSearch}"}},first:5){edges{node{id name}}}}`);
+          const oppIds=(oppQ?.data?.teams?.edges||[]).map(e=>e.node.id);
+          if(!oppIds.length) return;
+          // Find series for opponent on this exact date
+          const srQ=await cdQ(`{allSeries(filter:{teamIds:{in:${JSON.stringify(oppIds)}},startTimeScheduled:{gte:"${isoDate}T00:00:00Z",lte:"${isoDate}T23:59:59Z"}},first:3,orderBy:StartTimeScheduled){edges{node{id startedAt}}}}`);
+          const sid=srQ?.data?.allSeries?.edges?.[0]?.node?.id;
+          if(!sid) return;
+          // Get Series State and find player
+          const ss=await ssQ(`{seriesState(id:"${sid}"){id startedAt teams{id name won players{${SP}}} games{sequenceNumber map{name} teams{id players{${GP}}}}}}`);
+          const sData=ss?.data?.seriesState;
+          if(!sData) return;
+          for(const team of sData.teams||[]){
+            const player=team.players?.find(p=>p.name?.toLowerCase().includes(slug));
+            if(!player) continue;
+            const date=sData.startedAt?.split('T')[0];
+            if(!date) return;
+            const mapHS={};
+            for(const g of sData.games||[]){
+              const gt=g.teams?.find(t=>t.id===team.id);
+              const gp=gt?.players?.find(p=>p.name?.toLowerCase().includes(slug));
+              if(gp) mapHS[g.sequenceNumber]={hs:gp.headshots||0};
+            }
+            gridByDate[date]={hs:player.headshots||0,assists:player.killAssistsGiven||0,mapHS,won:team.won};
+            break;
+          }
+        }catch{}
+      }));
+    }
+
+    // ── Apply gridByDate to all games ─────────────────────────────────────────
     for(const game of games) {
-      const isoDate = game._date?.match(/^(\d{2})\/(\d{2})\/(\d{2})$/)
-        ? `20${game._date.slice(6)}-${game._date.slice(3,5)}-${game._date.slice(0,2)}`
-        : game._date;
+      const isoDate=toISO(game._date);
       const grid=gridByDate[isoDate];
       if(grid) {
         game.headshots=grid.hs;
         game.assists=grid.assists;
         if(grid.won!==undefined) game.win=grid.won;
         game.maps.forEach((m,i)=>{
-          const gh=grid.mapHS[i+1];
+          const gh=grid.mapHS?.[i+1];
           if(gh) m.headshots=gh.hs;
         });
       }
