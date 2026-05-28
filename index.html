@@ -233,7 +233,22 @@ async function getWNBALog(id){
 }
 
 // ── Dota 2 helpers (OpenDota API — free, no key needed) ───────────────────────
-async function searchDota(q){const r=await fetch(`https://api.opendota.com/api/search?q=${encodeURIComponent(q)}`);const d=await r.json();return(Array.isArray(d)?d:[]).slice(0,8).map(p=>({id:String(p.account_id),name:p.personaname||'Unknown',sub:'Dota 2 Player'}));}
+// Uses /api/proPlayers so search works by pro alias (Yatoro, Collapse) not Steam name
+let _dotaProCache=null;
+async function getDotaProPlayers(){
+  if(_dotaProCache)return _dotaProCache;
+  const r=await fetch('https://api.opendota.com/api/proPlayers');
+  _dotaProCache=await r.json();
+  return _dotaProCache;
+}
+async function searchDota(q){
+  const players=await getDotaProPlayers();
+  const ql=q.toLowerCase();
+  return(Array.isArray(players)?players:[])
+    .filter(p=>((p.name||'').toLowerCase().includes(ql)||(p.personaname||'').toLowerCase().includes(ql))&&p.account_id)
+    .slice(0,8)
+    .map(p=>({id:String(p.account_id),name:p.name||p.personaname||'Unknown',sub:`${p.team_name||'Free Agent'} · Dota 2`}));
+}
 async function getDotaLog(accountId){
   const r=await fetch(`https://api.opendota.com/api/players/${accountId}/matches?limit=40&lobby_type=1`);
   const d=await r.json();
