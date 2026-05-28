@@ -2,36 +2,49 @@ export const config = { maxDuration: 30 };
 const KEY = process.env.GRID_API_KEY;
 const CD = 'https://api-op.grid.gg/central-data/graphql';
 const SS = 'https://api-op.grid.gg/live-data-feed/series-state/graphql';
+const SP = `id name kills killAssistsGiven ... on SeriesPlayerStateCs2{headshots} ... on SeriesPlayerStateCsgo{headshots}`;
 async function cdQ(q){const r=await fetch(CD,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':KEY},body:JSON.stringify({query:q})});return r.json();}
 async function ssQ(q){const r=await fetch(SS,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':KEY},body:JSON.stringify({query:q})});return r.json();}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
-  const ninetyDaysAgo = new Date(Date.now()-90*86400000).toISOString();
 
-  // Test 1: allSeries filtered by team 51439 (what the frontend actually uses)
-  const r1 = await cdQ(`{allSeries(filter:{teamIds:{in:["51439"]},startTimeScheduled:{gte:"${ninetyDaysAgo}"}},first:20,orderBy:StartTimeScheduled){edges{node{id startTimeScheduled tournament{name} teams{baseInfo{name}}}}}}`);
-  out.team_51439_series = r1?.data?.allSeries?.edges?.map(e=>({
-    id:e.node.id, date:e.node.startTimeScheduled?.split('T')[0],
-    tournament:e.node.tournament?.name, teams:e.node.teams?.map(t=>t.baseInfo?.name)
-  }))||[];
+  // Exact replication of Pass 2 for Liquid on May 13
+  const isoDate = '2026-05-13';
+  const oppSearch = 'Liquid';
+  const slug = 'swisher';
 
-  // Test 2: allSeries filtered by team 52200 (what our debug used)
-  const r2 = await cdQ(`{allSeries(filter:{teamIds:{in:["52200"]},startTimeScheduled:{gte:"${ninetyDaysAgo}"}},first:20,orderBy:StartTimeScheduled){edges{node{id startTimeScheduled tournament{name} teams{baseInfo{name}}}}}}`);
-  out.team_52200_series = r2?.data?.allSeries?.edges?.map(e=>({
-    id:e.node.id, date:e.node.startTimeScheduled?.split('T')[0],
-    tournament:e.node.tournament?.name, teams:e.node.teams?.map(t=>t.baseInfo?.name)
-  }))||[];
+  // Step 1: find opponent team
+  const oppQ = await cdQ(`{teams(filter:{name:{contains:"${oppSearch}"}},first:5){edges{node{id name}}}}`);
+  out.step1_teams = oppQ?.data?.teams?.edges?.map(e=>e.node)||[];
+  out.step1_error = oppQ?.errors;
+  const oppIds = out.step1_teams.map(t=>t.id);
 
-  // Test 3: Does GRID support playerIds filter on allSeries?
-  const r3 = await cdQ(`{allSeries(filter:{playerIds:{in:["114025"]},startTimeScheduled:{gte:"${ninetyDaysAgo}"}},first:20,orderBy:StartTimeScheduled){edges{node{id startTimeScheduled tournament{name}}}}}`);
-  out.playerIds_filter = r3?.data?.allSeries?.edges?.map(e=>e.node)||[];
-  out.playerIds_error = r3?.errors?.[0]?.message;
+  // Step 2: find series ±1 day
+  const gte = '2026-05-12T00:00:00Z';
+  const lte = '2026-05-14T23:59:59Z';
+  const srQ = await cdQ(`{allSeries(filter:{teamIds:{in:${JSON.stringify(oppIds)}},startTimeScheduled:{gte:"${gte}",lte:"${lte}"}},first:5,orderBy:StartTimeScheduled){edges{node{id startedAt tournament{name} teams{baseInfo{name}}}}}}`);
+  out.step2_series = srQ?.data?.allSeries?.edges?.map(e=>e.node?.id+'|'+e.node?.startedAt?.split('T')[0]+'|'+e.node?.teams?.map(t=>t.baseInfo?.name).join(' vs '))||[];
+  out.step2_error = srQ?.errors;
+  const sid = srQ?.data?.allSeries?.edges?.[0]?.node?.id;
 
-  // Test 4: Swisher's current GRID profile - what team does GRID show now?
-  const r4 = await cdQ(`{players(filter:{nickname:{equals:"Swisher"}},first:5){edges{node{id nickname title{id} team{id name}}}}}`);
-  out.swisher_profile = r4?.data?.players?.edges?.map(e=>e.node)||[];
+  // Step 3: Series State
+  if(sid) {
+    const ss = await ssQ(`{seriesState(id:"${sid}"){id startedAt teams{id name players{id name kills ...on SeriesPlayerStateCs2{headshots}}}}}`);
+    out.step3_series_id = sid;
+    out.step3_error = ss?.errors;
+    const allPlayers = [];
+    for(const team of ss?.data?.seriesState?.teams||[]) {
+      for(const p of team.players||[]) {
+        allPlayers.push({team:team.name, name:p.name, kills:p.kills, hs:p.headshots});
+      }
+    }
+    out.step3_all_players = allPlayers;
+    const swisher = allPlayers.find(p=>p.name?.toLowerCase().includes(slug));
+    out.step3_swisher_found = !!swisher;
+    out.step3_swisher = swisher;
+  }
 
   return res.json(out);
 }
