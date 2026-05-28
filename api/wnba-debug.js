@@ -13,38 +13,33 @@ export default async function handler(req, res) {
   const id = '4433403';
   const out = {};
 
-  // Step 1: Full eventlog structure
+  // Top-level events, not team-level
   const eventlog = await get(`https://sports.core.api.espn.com/v2/sports/basketball/leagues/wnba/athletes/${id}/eventlog?limit=5`);
-  out.eventlog_keys = Object.keys(eventlog);
-  out.teams_keys = Object.keys(eventlog.teams || {});
+  const topEvents = eventlog.events || {};
+  const eventKeys = Object.keys(topEvents);
+  out.top_level_event_count = eventKeys.length;
+  out.top_level_event_keys = eventKeys.slice(0, 3);
+  out.first_top_event = topEvents[eventKeys[0]];
 
-  // Get first team's events
-  const firstTeamKey = Object.keys(eventlog.teams || {})[0];
-  const firstTeam = eventlog.teams?.[firstTeamKey];
-  out.team_object_keys = Object.keys(firstTeam || {});
+  // Follow statistics $ref if present in top-level event
+  const firstEvent = topEvents[eventKeys[0]];
+  const statsRef = Array.isArray(firstEvent?.statistics)
+    ? firstEvent.statistics[0]?.$ref
+    : firstEvent?.statistics?.$ref;
 
-  const events = firstTeam?.events || {};
-  const eventKeys = Object.keys(events);
-  out.event_count = eventKeys.length;
-  out.first_event_keys = Object.keys(events[eventKeys[0]] || {});
-  out.first_event_full = events[eventKeys[0]];
+  out.stats_ref_found = statsRef || null;
 
-  // Step 2: Follow the statistics $ref for the first event if it exists
-  const firstEventStats = events[eventKeys[0]]?.statistics;
-  if (firstEventStats?.$ref) {
-    try {
-      const stats = await get(firstEventStats.$ref);
-      out.stats_ref_keys = Object.keys(stats);
-      out.stats_splits = stats.splits?.categories?.map(c => ({
-        name: c.name,
-        stat_names: c.stats?.map(s => s.name)
-      }));
-      out.stats_preview = JSON.stringify(stats).slice(0, 500);
-    } catch(e) { out.stats_ref_error = e.message; }
-  } else {
-    out.stats_note = 'No statistics $ref — inline or missing';
-    out.first_event_stats_raw = firstEventStats;
+  if (statsRef) {
+    const stats = await get(statsRef);
+    out.stats_keys = Object.keys(stats);
+    out.stats_categories = stats.splits?.categories?.map(c => ({
+      name: c.name,
+      stats: c.stats?.map(s => `${s.name}: ${s.value}`)
+    }));
   }
+
+  // Also check: maybe limit=5 is too small and no games played yet — try limit=1&page=1 differently
+  out.raw_eventlog_preview = JSON.stringify(eventlog).slice(0, 600);
 
   return res.json(out);
 }
