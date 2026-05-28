@@ -110,24 +110,27 @@ export default async function handler(req, res) {
       if (!id) return res.json([]);
 
       const year = new Date().getFullYear();
-      // Career: last 3 prior seasons. Season: current year only.
-      const seasons = scope === 'career'
-        ? [year - 1, year - 2, year - 3]
-        : [year];
 
-      // Fetch all season eventlogs (sequentially to avoid hammering ESPN)
-      const allItems = [];
-      for (const s of seasons) {
-        try {
-          const items = await fetchEventlogItems(id, s);
-          allItems.push(...items);
-        } catch { /* season may not exist for player */ }
+      let items;
+      if (scope === 'career') {
+        // Career: fetch last 3 prior seasons, swallow missing seasons
+        const careerItems = [];
+        for (const s of [year - 1, year - 2, year - 3]) {
+          try {
+            const si = await fetchEventlogItems(id, s);
+            careerItems.push(...si);
+          } catch { /* season may not exist */ }
+        }
+        items = careerItems;
+      } else {
+        // Season: single fetch, let errors propagate so frontend sees them
+        items = await fetchEventlogItems(id, year);
       }
 
-      if (!allItems.length) return res.json([]);
+      if (!items.length) return res.json([]);
 
       // Parallel fetch stats + competition for each game
-      const games = await Promise.all(allItems.map(async item => {
+      const games = await Promise.all(items.map(async item => {
         try {
           const [statsData, compInfo] = await Promise.all([
             espnGet(item.statistics.$ref),
@@ -138,7 +141,6 @@ export default async function handler(req, res) {
         } catch { return null; }
       }));
 
-      // Sort newest first
       return res.json(
         games.filter(Boolean).sort((a, b) => b._date.localeCompare(a._date))
       );
