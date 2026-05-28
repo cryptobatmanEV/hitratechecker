@@ -8,74 +8,6 @@ async function odFetch(path) {
   return r.json();
 }
 
-function groupIntoSeries(matches, oppMap) {
-  // Build flat game list
-  const games = matches
-    .filter(m =>
-      typeof m.kills === 'number' &&
-      m.lobby_type === 1 &&
-      (m.duration || 0) > 300
-    )
-    .map(m => ({
-      kills:      m.kills,
-      deaths:     m.deaths   ?? 0,
-      assists:    m.assists  ?? 0,
-      gpm:        m.gold_per_min ?? 0,
-      xpm:        m.xp_per_min  ?? 0,
-      start_time: m.start_time || 0,
-      _date:      new Date((m.start_time || 0) * 1000).toISOString().split('T')[0],
-      _opp:       oppMap[m.match_id] || '',
-      win:        m.radiant_win === (m.player_slot < 128),
-    }));
-
-  // Group by date + opponent (same opponent on same day = same series)
-  const buckets = new Map();
-  for (const g of games) {
-    const key = g._opp ? `${g._date}|${g._opp}` : `solo_${g.start_time}`;
-    if (!buckets.has(key)) buckets.set(key, []);
-    buckets.get(key).push(g);
-  }
-
-  // Build series objects with maps array sorted Game 1 first
-  const series = [];
-  for (const [, bucket] of buckets) {
-    bucket.sort((a, b) => a.start_time - b.start_time); // G1 first
-
-    const maps = bucket.map(g => ({
-      kills:   g.kills,
-      deaths:  g.deaths,
-      assists: g.assists,
-      gpm:     g.gpm,
-      xpm:     g.xpm,
-      win:     g.win,
-    }));
-
-    const n          = maps.length;
-    const sumKills   = maps.reduce((s, m) => s + m.kills,   0);
-    const sumDeaths  = maps.reduce((s, m) => s + m.deaths,  0);
-    const sumAssists = maps.reduce((s, m) => s + m.assists, 0);
-    const avgGpm     = Math.round(maps.reduce((s, m) => s + m.gpm, 0) / n);
-    const avgXpm     = Math.round(maps.reduce((s, m) => s + m.xpm, 0) / n);
-    const seriesWins = maps.filter(m => m.win).length;
-
-    series.push({
-      _date:   bucket[0]._date,
-      _opp:    bucket[0]._opp,
-      maps,
-      kills:   sumKills,
-      deaths:  sumDeaths,
-      assists: sumAssists,
-      gpm:     avgGpm,
-      xpm:     avgXpm,
-      win:     seriesWins > n / 2,
-    });
-  }
-
-  // Most recent series first
-  series.sort((a, b) => b._date.localeCompare(a._date));
-  return series;
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store');
@@ -112,22 +44,88 @@ export default async function handler(req, res) {
       const limit    = isCareer ? 160 : 40;
       const offset   = isCareer ? 40  : 0;
 
-      const [matches, teamMatches] = await Promise.all([
+      // Fetch player matches + team match history in parallel
+      const [playerMatches, teamMatches] = await Promise.all([
         odFetch(`/players/${id}/matches?limit=${limit}&offset=${offset}&significant=1`),
         teamId ? odFetch(`/teams/${teamId}/matches`) : Promise.resolve([]),
       ]);
 
-      // Build match_id → opponent name
-      const oppMap = {};
+      // Build match_id → {opp, series_id} from team history
+      const matchMeta = {};
       if (Array.isArray(teamMatches)) {
         teamMatches.forEach(m => {
-          oppMap[m.match_id] = m.opposing_team_name || '';
+          matchMeta[m.match_id] = {
+            opp:      m.opposing_team_name || '',
+            seriesId: m.series_id || null,
+          };
         });
       }
 
-      if (!Array.isArray(matches)) return res.json([]);
+      if (!Array.isArray(playerMatches)) return res.json([]);
 
-      return res.json(groupIntoSeries(matches, oppMap));
+      // Filter to pro matches only
+      const proGames = playerMatches.filter(m =>
+        typeof m.kills === 'number' &&
+        m.lobby_type === 1 &&
+        (m.duration || 0) > 300
+      );
+
+      // Group by series_id; fallback key = opp+date for unmatched games
+      const seriesMap = {};
+      proGames.forEach(m => {
+        const meta      = matchMeta[m.match_id] || {};
+        const seriesKey = meta.seriesId
+          ? `s_${meta.seriesId}`
+          : `g_${m.match_id}`;            // solo entry if no series info
+
+        if (!seriesMap[seriesKey]) {
+          seriesMap[seriesKey] = {
+            startTime: m.start_time || 0,
+            opp:       meta.opp || '',
+            games:     [],
+          };
+        }
+        // Keep earliest start_time for the series header date
+        if ((m.start_time || 0) < seriesMap[seriesKey].startTime) {
+          seriesMap[seriesKey].startTime = m.start_time || 0;
+        }
+        seriesMap[seriesKey].games.push({
+          kills:   m.kills,
+          deaths:  m.deaths   ?? 0,
+          assists: m.assists  ?? 0,
+          gpm:     m.gold_per_min ?? 0,
+          xpm:     m.xp_per_min  ?? 0,
+          startTime: m.start_time || 0,
+        });
+      });
+
+      // Sort games within each series chronologically
+      const seriesList = Object.values(seriesMap)
+        .map(s => {
+          const sorted = s.games.sort((a, b) => a.startTime - b.startTime);
+          const count  = sorted.length;
+          return {
+            _date:   new Date(s.startTime * 1000).toISOString().split('T')[0],
+            _opp:    s.opp,
+            // Top-level totals/averages for "full series" scope
+            kills:   sorted.reduce((n, g) => n + g.kills,   0),
+            deaths:  sorted.reduce((n, g) => n + g.deaths,  0),
+            assists: sorted.reduce((n, g) => n + g.assists, 0),
+            gpm:     count ? Math.round(sorted.reduce((n, g) => n + g.gpm, 0) / count) : 0,
+            xpm:     count ? Math.round(sorted.reduce((n, g) => n + g.xpm, 0) / count) : 0,
+            // Per-game maps array (same pattern as CS2/LoL)
+            maps:    sorted.map(g => ({
+              kills:   g.kills,
+              deaths:  g.deaths,
+              assists: g.assists,
+              gpm:     g.gpm,
+              xpm:     g.xpm,
+            })),
+          };
+        })
+        .sort((a, b) => b._date.localeCompare(a._date));
+
+      return res.json(seriesList);
     }
 
     return res.status(400).json({ error: 'Unknown action' });
