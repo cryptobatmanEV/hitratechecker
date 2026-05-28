@@ -143,24 +143,28 @@ async function enrichWithGridHS(games, teamId, slug) {
     }
 
     // ── Pass 2: opponent-based fallback for team changes ──────────────────────
-    // Sequential (not parallel) to avoid GRID rate limiting
-    const uncovered = games.filter(g=>!gridByDate[toISO(g._date)]&&g._opp).slice(0,5);
-    for(const game of uncovered) {
+    // Phase A: parallel team lookups (fast, just checking if opponent exists in GRID)
+    const uncovered = games.filter(g=>!gridByDate[toISO(g._date)]&&g._opp).slice(0,30);
+    const withTeams = (await Promise.all(uncovered.map(async game=>{
       try{
-        const isoDate=toISO(game._date);
         const oppSearch=game._opp.replace(/['"/\\]/g,'').substring(0,12);
-        // Find opponent team in GRID
         const oppQ=await cdQ(`{teams(filter:{name:{contains:"${oppSearch}"}},first:5){edges{node{id name}}}}`);
         const oppIds=(oppQ?.data?.teams?.edges||[]).map(e=>e.node.id);
-        if(!oppIds.length) continue;
-        // ±1 day window handles timezone differences between HLTV and GRID
+        return oppIds.length ? {game,oppIds} : null;
+      }catch{return null;}
+    }))).filter(Boolean);
+
+    // Phase B: sequential series+stats lookups only for opponents found in GRID
+    for(const {game,oppIds} of withTeams){
+      try{
+        const isoDate=toISO(game._date);
+        if(gridByDate[isoDate]) continue; // already filled by earlier iteration
         const d=new Date(isoDate);
         const gte=new Date(d.getTime()-86400000).toISOString().split('T')[0];
         const lte=new Date(d.getTime()+86400000).toISOString().split('T')[0];
         const srQ=await cdQ(`{allSeries(filter:{teamIds:{in:${JSON.stringify(oppIds)}},startTimeScheduled:{gte:"${gte}T00:00:00Z",lte:"${lte}T23:59:59Z"}},first:5,orderBy:StartTimeScheduled){edges{node{id startTimeScheduled}}}}`);
         const seriesEdges=srQ?.data?.allSeries?.edges||[];
         if(!seriesEdges.length) continue;
-        // Check each candidate series for our player
         let found=false;
         for(const edge of seriesEdges){
           if(found) break;
