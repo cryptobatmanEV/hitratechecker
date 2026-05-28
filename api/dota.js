@@ -8,11 +8,79 @@ async function odFetch(path) {
   return r.json();
 }
 
+function groupIntoSeries(matches, oppMap) {
+  // Build flat game list
+  const games = matches
+    .filter(m =>
+      typeof m.kills === 'number' &&
+      m.lobby_type === 1 &&
+      (m.duration || 0) > 300
+    )
+    .map(m => ({
+      kills:      m.kills,
+      deaths:     m.deaths   ?? 0,
+      assists:    m.assists  ?? 0,
+      gpm:        m.gold_per_min ?? 0,
+      xpm:        m.xp_per_min  ?? 0,
+      start_time: m.start_time || 0,
+      _date:      new Date((m.start_time || 0) * 1000).toISOString().split('T')[0],
+      _opp:       oppMap[m.match_id] || '',
+      win:        m.radiant_win === (m.player_slot < 128),
+    }));
+
+  // Group by date + opponent (same opponent on same day = same series)
+  const buckets = new Map();
+  for (const g of games) {
+    const key = g._opp ? `${g._date}|${g._opp}` : `solo_${g.start_time}`;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(g);
+  }
+
+  // Build series objects with maps array sorted Game 1 first
+  const series = [];
+  for (const [, bucket] of buckets) {
+    bucket.sort((a, b) => a.start_time - b.start_time); // G1 first
+
+    const maps = bucket.map(g => ({
+      kills:   g.kills,
+      deaths:  g.deaths,
+      assists: g.assists,
+      gpm:     g.gpm,
+      xpm:     g.xpm,
+      win:     g.win,
+    }));
+
+    const n          = maps.length;
+    const sumKills   = maps.reduce((s, m) => s + m.kills,   0);
+    const sumDeaths  = maps.reduce((s, m) => s + m.deaths,  0);
+    const sumAssists = maps.reduce((s, m) => s + m.assists, 0);
+    const avgGpm     = Math.round(maps.reduce((s, m) => s + m.gpm, 0) / n);
+    const avgXpm     = Math.round(maps.reduce((s, m) => s + m.xpm, 0) / n);
+    const seriesWins = maps.filter(m => m.win).length;
+
+    series.push({
+      _date:   bucket[0]._date,
+      _opp:    bucket[0]._opp,
+      maps,
+      kills:   sumKills,
+      deaths:  sumDeaths,
+      assists: sumAssists,
+      gpm:     avgGpm,
+      xpm:     avgXpm,
+      win:     seriesWins > n / 2,
+    });
+  }
+
+  // Most recent series first
+  series.sort((a, b) => b._date.localeCompare(a._date));
+  return series;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store');
 
-  const { action, q, id, scope } = req.query;
+  const { action, q, id, scope, teamId } = req.query;
 
   try {
     // ── Search ────────────────────────────────────────────────────────────────
@@ -43,15 +111,13 @@ export default async function handler(req, res) {
       const isCareer = scope === 'career';
       const limit    = isCareer ? 160 : 40;
       const offset   = isCareer ? 40  : 0;
-      const teamId   = req.query.teamId || null;
 
-      // Fetch player matches + team match history in parallel
       const [matches, teamMatches] = await Promise.all([
         odFetch(`/players/${id}/matches?limit=${limit}&offset=${offset}&significant=1`),
         teamId ? odFetch(`/teams/${teamId}/matches`) : Promise.resolve([]),
       ]);
 
-      // Build match_id → opponent name from team's match history
+      // Build match_id → opponent name
       const oppMap = {};
       if (Array.isArray(teamMatches)) {
         teamMatches.forEach(m => {
@@ -61,23 +127,7 @@ export default async function handler(req, res) {
 
       if (!Array.isArray(matches)) return res.json([]);
 
-      const log = matches
-        .filter(m =>
-          typeof m.kills === 'number' &&
-          (m.duration || 0) > 300  // exclude forfeits / walkovers
-        )
-        .map(m => ({
-          kills:   m.kills,
-          deaths:  m.deaths   ?? 0,
-          assists: m.assists  ?? 0,
-          gpm:     m.gold_per_min ?? 0,
-          xpm:     m.xp_per_min  ?? 0,
-          _date:   new Date((m.start_time || 0) * 1000).toISOString().split('T')[0],
-          _opp:    oppMap[m.match_id] || '',
-          win:     m.radiant_win === (m.player_slot < 128),
-        }));
-
-      return res.json(log);
+      return res.json(groupIntoSeries(matches, oppMap));
     }
 
     return res.status(400).json({ error: 'Unknown action' });
