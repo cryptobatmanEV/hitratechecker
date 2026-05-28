@@ -143,22 +143,15 @@ async function enrichWithGridHS(games, teamId, slug) {
     }
 
     // ── Pass 2: opponent-based fallback for team changes ──────────────────────
-    // Phase A: parallel team lookups (fast, just checking if opponent exists in GRID)
-    const uncovered = games.filter(g=>!gridByDate[toISO(g._date)]&&g._opp).slice(0,30);
-    const withTeams = (await Promise.all(uncovered.map(async game=>{
+    // Sequential to stay within GRID rate limits
+    const uncovered = games.filter(g=>!gridByDate[toISO(g._date)]&&g._opp).slice(0,25);
+    for(const game of uncovered){
       try{
+        const isoDate=toISO(game._date);
         const oppSearch=game._opp.replace(/['"/\\]/g,'').substring(0,12);
         const oppQ=await cdQ(`{teams(filter:{name:{contains:"${oppSearch}"}},first:5){edges{node{id name}}}}`);
         const oppIds=(oppQ?.data?.teams?.edges||[]).map(e=>e.node.id);
-        return oppIds.length ? {game,oppIds} : null;
-      }catch{return null;}
-    }))).filter(Boolean);
-
-    // Phase B: sequential series+stats lookups only for opponents found in GRID
-    for(const {game,oppIds} of withTeams){
-      try{
-        const isoDate=toISO(game._date);
-        if(gridByDate[isoDate]) continue; // already filled by earlier iteration
+        if(!oppIds.length) continue;
         const d=new Date(isoDate);
         const gte=new Date(d.getTime()-86400000).toISOString().split('T')[0];
         const lte=new Date(d.getTime()+86400000).toISOString().split('T')[0];
