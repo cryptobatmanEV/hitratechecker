@@ -232,8 +232,9 @@ async function searchDota(q){
   const r=await fetch(`/api/dota?action=search&q=${encodeURIComponent(q)}`);
   return r.json();
 }
-async function getDotaLog(id,scope='season'){
-  const r=await fetch(`/api/dota?action=gamelog&id=${encodeURIComponent(id)}&scope=${scope}`);
+async function getDotaLog(id,scope='season',teamId=''){
+  const tid=teamId?`&teamId=${encodeURIComponent(teamId)}`:'';
+  const r=await fetch(`/api/dota?action=gamelog&id=${encodeURIComponent(id)}&scope=${scope}${tid}`);
   return r.json();
 }
 
@@ -458,11 +459,12 @@ function App(){
         setGameLog(log);
       }else if(isDota){
         setDebug("Fetching Dota 2 match history...");
-        const log=await getDotaLog(player.id,'season');
+        const dotaTeamId=player.teamId||'';
+        const log=await getDotaLog(player.id,'season',dotaTeamId);
         if(!log.length)throw new Error("No Dota 2 professional matches found. Try searching their Steam name.");
         setGameLog(log);
         setDebug("Fetching Dota 2 career data...");
-        try{const cl=await getDotaLog(player.id,'career');setCarLog(cl);}catch(e){}
+        try{const cl=await getDotaLog(player.id,'career',dotaTeamId);setCarLog(cl);}catch(e){}
       }else{
         const season=currentSeason();
         const log=await getGameLog(player.id,mlbGrp,[season]);
