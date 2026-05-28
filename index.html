@@ -116,8 +116,6 @@ const ES_STATS={
     {label:"Deaths",calc:g=>g.deaths},
     {label:"Assists",calc:g=>g.assists},
     {label:"CS (Creep Score)",calc:g=>g.cs},
-    {label:"K+A",calc:g=>(g.kills||0)+(g.assists||0)},
-    {label:"KDA",calc:g=>g.deaths>0?Math.round(((g.kills+g.assists)/g.deaths)*10)/10:((g.kills||0)+(g.assists||0))},
   ],
   dota2:[
     {label:"Kills",calc:g=>g.kills},
@@ -125,9 +123,6 @@ const ES_STATS={
     {label:"Assists",calc:g=>g.assists},
     {label:"GPM",calc:g=>g.gpm},
     {label:"XPM",calc:g=>g.xpm},
-    {label:"K+A",calc:g=>(g.kills||0)+(g.assists||0)},
-    {label:"KDA",calc:g=>g.deaths>0?Math.round(((g.kills+g.assists)/g.deaths)*10)/10:g.kills+g.assists},
-    {label:"Last Hits",calc:g=>g.lastHits},
   ],
   valorant:[
     {label:"Kills",calc:g=>g.kills},
@@ -250,7 +245,7 @@ async function searchDota(q){
     .map(p=>({id:String(p.account_id),name:p.name||p.personaname||'Unknown',sub:`${p.team_name||'Free Agent'} · Dota 2`}));
 }
 async function getDotaLog(accountId){
-  const r=await fetch(`https://api.opendota.com/api/players/${accountId}/matches?limit=40&lobby_type=1`);
+  const r=await fetch(`https://api.opendota.com/api/players/${accountId}/matches?limit=40&significant=1`);
   const d=await r.json();
   if(!Array.isArray(d))return[];
   return d.filter(m=>typeof m.kills==='number').map(m=>({kills:m.kills,deaths:m.deaths,assists:m.assists,gpm:m.gold_per_min||0,xpm:m.xp_per_min||0,lastHits:m.last_hits||0,heroDmg:Math.round((m.hero_damage||0)/1000*10)/10,_date:new Date((m.start_time||0)*1000).toISOString().split('T')[0],_opp:'',win:m.radiant_win===(m.player_slot<128)}));
