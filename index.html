@@ -483,7 +483,7 @@ function App(){
   const lineNum=parseFloat(line);
   const hasData=gameLog.length>0&&statList[statIdx]&&!isNaN(lineNum);
   const resolveG=g=>{
-    if(!isES||mapScope==="total")return g;
+    if(!isES||mapScope==="total"||isDota)return g;
     if(mapScope==="1+2"){
       // Sum map 1 + map 2 kills
       const m1=g.maps&&g.maps[0];
@@ -638,7 +638,7 @@ function App(){
       {/* Stat + line */}
       <div className="card"><div className="label-sm">STAT CATEGORY</div><select className="stat-select" value={statIdx} onChange={e=>setStatIdx(parseInt(e.target.value))}>{statList.map((s,i)=><option key={i} value={i}>{s.label}</option>)}</select></div>
       
-      {isES&&<div className="card"><div className="label-sm">MAP SCOPE</div><select className="stat-select" value={mapScope} onChange={e=>setMapScope(e.target.value)}><option value="total">Full Series (all maps)</option><option value="1+2">Maps 1+2 Combined</option><option value="1">Map 1 Only</option><option value="2">Map 2 Only</option><option value="3">Map 3 Only</option></select><div style={{fontSize:10,color:"rgba(255,255,255,0.35)",marginTop:6}}>{isLoL?"PrizePicks/Sleeper lines are typically Maps 1+2 Combined or Full Series":"DFS books typically prop Maps 1+2 Combined or Map 1 for CS2"}</div></div>}
+      {isES&&!isDota&&<div className="card"><div className="label-sm">MAP SCOPE</div><select className="stat-select" value={mapScope} onChange={e=>setMapScope(e.target.value)}><option value="total">Full Series (all maps)</option><option value="1+2">Maps 1+2 Combined</option><option value="1">Map 1 Only</option><option value="2">Map 2 Only</option><option value="3">Map 3 Only</option></select><div style={{fontSize:10,color:"rgba(255,255,255,0.35)",marginTop:6}}>{isLoL?"PrizePicks/Sleeper lines are typically Maps 1+2 Combined or Full Series":"DFS books typically prop Maps 1+2 Combined or Map 1 for CS2"}</div></div>}
       <div className="card"><div className="label-sm">PROJECTION LINE</div><div style={{display:"flex",gap:10}}><input className="tool-input" type="number" step="0.5" placeholder="e.g. 19.5" value={line} onChange={e=>setLine(e.target.value)} style={{flex:1}}/><div style={{display:"flex"}}><button className={"ou-btn ou-over"+(ou==="over"?" active":"")} onClick={()=>setOu("over")}>OVER</button><button className={"ou-btn ou-under"+(ou==="under"?" active":"")} onClick={()=>setOu("under")}>UNDER</button></div></div></div>
 
       {error&&<div className="error-box">{error}</div>}
