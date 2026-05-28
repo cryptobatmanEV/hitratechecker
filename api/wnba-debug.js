@@ -13,33 +13,35 @@ export default async function handler(req, res) {
   const id = '4433403';
   const out = {};
 
-  // Top-level events, not team-level
+  // Correct path: events.items
   const eventlog = await get(`https://sports.core.api.espn.com/v2/sports/basketball/leagues/wnba/athletes/${id}/eventlog?limit=5`);
-  const topEvents = eventlog.events || {};
-  const eventKeys = Object.keys(topEvents);
-  out.top_level_event_count = eventKeys.length;
-  out.top_level_event_keys = eventKeys.slice(0, 3);
-  out.first_top_event = topEvents[eventKeys[0]];
+  const items = eventlog.events?.items || [];
+  out.item_count = items.length;
+  out.first_item_keys = Object.keys(items[0] || {});
+  out.first_item_full = items[0]; // full structure to see all fields
 
-  // Follow statistics $ref if present in top-level event
-  const firstEvent = topEvents[eventKeys[0]];
-  const statsRef = Array.isArray(firstEvent?.statistics)
-    ? firstEvent.statistics[0]?.$ref
-    : firstEvent?.statistics?.$ref;
-
-  out.stats_ref_found = statsRef || null;
-
-  if (statsRef) {
-    const stats = await get(statsRef);
+  // If statistics is a $ref, follow it
+  const statsField = items[0]?.statistics;
+  if (statsField?.$ref) {
+    const stats = await get(statsField.$ref);
     out.stats_keys = Object.keys(stats);
     out.stats_categories = stats.splits?.categories?.map(c => ({
       name: c.name,
-      stats: c.stats?.map(s => `${s.name}: ${s.value}`)
+      stats: c.stats?.map(s => `${s.name}=${s.value}`)
     }));
+  } else if (Array.isArray(statsField)) {
+    // Follow first item in array if it's a ref
+    if (statsField[0]?.$ref) {
+      const stats = await get(statsField[0].$ref);
+      out.stats_array_ref_keys = Object.keys(stats);
+      out.stats_categories = stats.splits?.categories?.map(c => ({
+        name: c.name,
+        stats: c.stats?.map(s => `${s.name}=${s.value}`)
+      }));
+    }
+  } else {
+    out.stats_inline = statsField;
   }
-
-  // Also check: maybe limit=5 is too small and no games played yet — try limit=1&page=1 differently
-  out.raw_eventlog_preview = JSON.stringify(eventlog).slice(0, 600);
 
   return res.json(out);
 }
