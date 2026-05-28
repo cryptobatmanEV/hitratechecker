@@ -157,7 +157,7 @@ async function enrichWithGridHS(games, teamId, slug) {
         const d=new Date(isoDate);
         const gte=new Date(d.getTime()-86400000).toISOString().split('T')[0];
         const lte=new Date(d.getTime()+86400000).toISOString().split('T')[0];
-        const srQ=await cdQ(`{allSeries(filter:{teamIds:{in:${JSON.stringify(oppIds)}},startTimeScheduled:{gte:"${gte}T00:00:00Z",lte:"${lte}T23:59:59Z"}},first:5,orderBy:StartTimeScheduled){edges{node{id startedAt}}}}`);
+        const srQ=await cdQ(`{allSeries(filter:{teamIds:{in:${JSON.stringify(oppIds)}},startTimeScheduled:{gte:"${gte}T00:00:00Z",lte:"${lte}T23:59:59Z"}},first:5,orderBy:StartTimeScheduled){edges{node{id startTimeScheduled}}}}`);
         const seriesEdges=srQ?.data?.allSeries?.edges||[];
         if(!seriesEdges.length) continue;
         // Check each candidate series for our player
