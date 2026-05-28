@@ -192,14 +192,56 @@ async function getNHLCareerLog(playerId){
   return d.games||[];
 }
 
-// ── WNBA helpers (proxied through /api/wnba → official stats.wnba.com) ─────────
+// ── WNBA helpers (ESPN unofficial API — browser-side, no proxy needed) ──────────
 async function searchWNBA(q){
-  const r=await fetch(`/api/wnba?action=search&q=${encodeURIComponent(q)}`);
-  return r.json();
+  const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/athletes?search=${encodeURIComponent(q)}&limit=10&active=true`);
+  const d=await r.json();
+  return(d.athletes||[]).map(a=>({
+    id:  a.id,
+    name:a.displayName,
+    sub: `${a.position?.abbreviation||''} · ${a.team?.displayName||''}`.trim(),
+  }));
 }
+
+function _parseWNBALog(d){
+  const evMap=d.events||{};
+  const season=d.seasonTypes?.find(s=>s.id===2)||d.seasonTypes?.[0];
+  if(!season)return[];
+  const cat=season.categories?.[0];
+  if(!cat)return[];
+  const names=(cat.names||[]).map(n=>n.toLowerCase());
+  const fi=n=>names.indexOf(n);
+  const ptsI=fi('pts'),rebI=fi('reb'),astI=fi('ast'),stlI=fi('stl'),blkI=fi('blk');
+  const fg3I=names.findIndex(n=>n==='3pm'||n==='fg3m'||n==='fg3'||n.startsWith('3p'));
+  const tovI=fi('to')!==-1?fi('to'):fi('tov');
+  return(cat.events||[]).map((eid,ei)=>{
+    const ev=evMap[eid];if(!ev)return null;
+    const vals=cat.totals?.[ei]||[];
+    const g=i=>i>=0?parseFloat(vals[i])||0:0;
+    return{pts:g(ptsI),reb:g(rebI),ast:g(astI),stl:g(stlI),blk:g(blkI),
+      fg3m:g(fg3I),tov:g(tovI),
+      _date:ev.gameDate?.split('T')[0]||'',
+      _opp:ev.opponent?.displayName||'',win:ev.winner||false};
+  }).filter(Boolean).reverse();
+}
+
 async function getWNBALog(id,scope='season'){
-  const r=await fetch(`/api/wnba?action=gamelog&id=${encodeURIComponent(id)}&scope=${scope}`);
-  return r.json();
+  if(scope==='season'){
+    const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/athletes/${id}/gamelog`);
+    return _parseWNBALog(await r.json());
+  }else{
+    // Career: fetch last 2 prior seasons
+    const yr=new Date().getFullYear();
+    const seasons=[yr-1,yr-2];
+    const all=[];
+    for(const s of seasons){
+      try{
+        const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/athletes/${id}/gamelog?season=${s}`);
+        all.push(..._parseWNBALog(await r.json()));
+      }catch{}
+    }
+    return all;
+  }
 }
 
 // ── Dota 2 helpers (proxied through /api/dota to avoid browser CORS issues) ───
