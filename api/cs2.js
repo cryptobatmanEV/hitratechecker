@@ -143,30 +143,36 @@ async function enrichWithGridHS(games, teamId, slug) {
     }
 
     // ── Pass 2: opponent-based fallback for team changes ──────────────────────
-    // Handles players who changed teams — finds historical series by opponent+date
-    const uncovered = games.filter(g=>!gridByDate[toISO(g._date)]&&g._opp).slice(0,8);
-    if(uncovered.length) {
-      await Promise.all(uncovered.map(async game=>{
-        try{
-          const isoDate=toISO(game._date);
-          const oppSearch=game._opp.replace(/['"\\]/g,'').substring(0,12);
-          // Find opponent team in GRID
-          const oppQ=await cdQ(`{teams(filter:{name:{contains:"${oppSearch}"}},first:5){edges{node{id name}}}}`);
-          const oppIds=(oppQ?.data?.teams?.edges||[]).map(e=>e.node.id);
-          if(!oppIds.length) return;
-          // Find series for opponent on this exact date
-          const srQ=await cdQ(`{allSeries(filter:{teamIds:{in:${JSON.stringify(oppIds)}},startTimeScheduled:{gte:"${isoDate}T00:00:00Z",lte:"${isoDate}T23:59:59Z"}},first:3,orderBy:StartTimeScheduled){edges{node{id startedAt}}}}`);
-          const sid=srQ?.data?.allSeries?.edges?.[0]?.node?.id;
-          if(!sid) return;
-          // Get Series State and find player
+    // Sequential (not parallel) to avoid GRID rate limiting
+    const uncovered = games.filter(g=>!gridByDate[toISO(g._date)]&&g._opp).slice(0,5);
+    for(const game of uncovered) {
+      try{
+        const isoDate=toISO(game._date);
+        const oppSearch=game._opp.replace(/['"/\\]/g,'').substring(0,12);
+        // Find opponent team in GRID
+        const oppQ=await cdQ(`{teams(filter:{name:{contains:"${oppSearch}"}},first:5){edges{node{id name}}}}`);
+        const oppIds=(oppQ?.data?.teams?.edges||[]).map(e=>e.node.id);
+        if(!oppIds.length) continue;
+        // ±1 day window handles timezone differences between HLTV and GRID
+        const d=new Date(isoDate);
+        const gte=new Date(d.getTime()-86400000).toISOString().split('T')[0];
+        const lte=new Date(d.getTime()+86400000).toISOString().split('T')[0];
+        const srQ=await cdQ(`{allSeries(filter:{teamIds:{in:${JSON.stringify(oppIds)}},startTimeScheduled:{gte:"${gte}T00:00:00Z",lte:"${lte}T23:59:59Z"}},first:5,orderBy:StartTimeScheduled){edges{node{id startedAt}}}}`);
+        const seriesEdges=srQ?.data?.allSeries?.edges||[];
+        if(!seriesEdges.length) continue;
+        // Check each candidate series for our player
+        let found=false;
+        for(const edge of seriesEdges){
+          if(found) break;
+          const sid=edge.node.id;
           const ss=await ssQ(`{seriesState(id:"${sid}"){id startedAt teams{id name won players{${SP}}} games{sequenceNumber map{name} teams{id players{${GP}}}}}}`);
           const sData=ss?.data?.seriesState;
-          if(!sData) return;
+          if(!sData) continue;
           for(const team of sData.teams||[]){
             const player=team.players?.find(p=>p.name?.toLowerCase().includes(slug));
             if(!player) continue;
             const date=sData.startedAt?.split('T')[0];
-            if(!date) return;
+            if(!date) break;
             const mapHS={};
             for(const g of sData.games||[]){
               const gt=g.teams?.find(t=>t.id===team.id);
@@ -174,10 +180,11 @@ async function enrichWithGridHS(games, teamId, slug) {
               if(gp) mapHS[g.sequenceNumber]={hs:gp.headshots||0};
             }
             gridByDate[date]={hs:player.headshots||0,assists:player.killAssistsGiven||0,mapHS,won:team.won};
+            found=true;
             break;
           }
-        }catch{}
-      }));
+        }
+      }catch{}
     }
 
     // ── Apply gridByDate to all games ─────────────────────────────────────────
