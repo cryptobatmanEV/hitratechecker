@@ -110,12 +110,24 @@ export default async function handler(req, res) {
       if (!id) return res.json([]);
 
       const year = new Date().getFullYear();
-      const season = scope === 'career' ? year - 1 : year;
+      // Career: last 3 prior seasons. Season: current year only.
+      const seasons = scope === 'career'
+        ? [year - 1, year - 2, year - 3]
+        : [year];
 
-      const items = await fetchEventlogItems(id, season);
+      // Fetch all season eventlogs (sequentially to avoid hammering ESPN)
+      const allItems = [];
+      for (const s of seasons) {
+        try {
+          const items = await fetchEventlogItems(id, s);
+          allItems.push(...items);
+        } catch { /* season may not exist for player */ }
+      }
+
+      if (!allItems.length) return res.json([]);
 
       // Parallel fetch stats + competition for each game
-      const games = await Promise.all(items.map(async item => {
+      const games = await Promise.all(allItems.map(async item => {
         try {
           const [statsData, compInfo] = await Promise.all([
             espnGet(item.statistics.$ref),
@@ -126,7 +138,10 @@ export default async function handler(req, res) {
         } catch { return null; }
       }));
 
-      return res.json(games.filter(Boolean).reverse()); // newest first
+      // Sort newest first
+      return res.json(
+        games.filter(Boolean).sort((a, b) => b._date.localeCompare(a._date))
+      );
     }
 
     return res.status(400).json({ error: 'Unknown action' });
