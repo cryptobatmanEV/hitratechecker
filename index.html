@@ -109,12 +109,7 @@ const PIT_STATS=[
 const ES_STATS={
   cs2:[
     {label:"Kills",calc:g=>g.kills},
-    {label:"Deaths",calc:g=>g.deaths},
-    {label:"Assists",calc:g=>g.assists},
     {label:"Headshots",calc:g=>g.headshots},
-    {label:"HS %",calc:g=>g.hsPct},
-    {label:"K/D Ratio",calc:g=>g.kd},
-    {label:"K+A",calc:g=>(g.kills||0)+(g.assists||0)},
   ],
   lol:[
     {label:"Kills",calc:g=>g.kills},
@@ -123,6 +118,24 @@ const ES_STATS={
     {label:"CS (Creep Score)",calc:g=>g.cs},
     {label:"K+A",calc:g=>(g.kills||0)+(g.assists||0)},
     {label:"KDA",calc:g=>g.deaths>0?Math.round(((g.kills+g.assists)/g.deaths)*10)/10:((g.kills||0)+(g.assists||0))},
+  ],
+  dota2:[
+    {label:"Kills",calc:g=>g.kills},
+    {label:"Deaths",calc:g=>g.deaths},
+    {label:"Assists",calc:g=>g.assists},
+    {label:"GPM",calc:g=>g.gpm},
+    {label:"XPM",calc:g=>g.xpm},
+    {label:"K+A",calc:g=>(g.kills||0)+(g.assists||0)},
+    {label:"KDA",calc:g=>g.deaths>0?Math.round(((g.kills+g.assists)/g.deaths)*10)/10:g.kills+g.assists},
+    {label:"Last Hits",calc:g=>g.lastHits},
+  ],
+  valorant:[
+    {label:"Kills",calc:g=>g.kills},
+    {label:"Deaths",calc:g=>g.deaths},
+    {label:"Assists",calc:g=>g.assists},
+    {label:"K+A",calc:g=>(g.kills||0)+(g.assists||0)},
+    {label:"KDA",calc:g=>g.deaths>0?Math.round(((g.kills+g.assists)/g.deaths)*10)/10:g.kills+g.assists},
+    {label:"HS %",calc:g=>g.hsP||null},
   ],
 };
 
@@ -169,6 +182,90 @@ async function getNHLCareerLog(playerId){
   const d=await r.json();
   if(d.error)return[];
   return d.games||[];
+}
+
+// ── NFL / WNBA / CFB helpers (ESPN unofficial API) ───────────────────────────
+async function searchNFL(q){const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/athletes?search=${encodeURIComponent(q)}&limit=10&active=true`);const d=await r.json();return(d.athletes||[]).map(a=>({id:a.id,name:a.displayName,sub:`${a.position?.abbreviation||''} · ${a.team?.displayName||''}`.trim()}));}
+async function searchWNBA(q){const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/athletes?search=${encodeURIComponent(q)}&limit=10&active=true`);const d=await r.json();return(d.athletes||[]).map(a=>({id:a.id,name:a.displayName,sub:`${a.position?.abbreviation||''} · ${a.team?.displayName||''}`.trim()}));}
+async function searchCFB(q){const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/college-football/athletes?search=${encodeURIComponent(q)}&limit=10`);const d=await r.json();return(d.athletes||[]).map(a=>({id:a.id,name:a.displayName,sub:`${a.position?.abbreviation||''} · ${a.team?.displayName||''}`.trim()}));}
+
+function parseESPNFootballLog(d){
+  const evMap=d.events||{};
+  const season=d.seasonTypes?.find(s=>s.id===2)||d.seasonTypes?.[0];
+  if(!season)return[];
+  const allIds=[...new Set((season.categories||[]).flatMap(c=>c.events||[]))];
+  return allIds.map(eid=>{
+    const ev=evMap[eid];if(!ev)return null;
+    const g={passYds:0,passTD:0,passAtt:0,passCmp:0,passInt:0,rushYds:0,rushTD:0,rushAtt:0,recYds:0,recTD:0,rec:0,targets:0,
+      _date:ev.gameDate?.split('T')[0]||'',_opp:ev.opponent?.displayName||'',win:ev.winner||false};
+    for(const cat of season.categories||[]){
+      const idx=(cat.events||[]).indexOf(eid);if(idx===-1)continue;
+      const vals=cat.totals?.[idx]||[];
+      (cat.names||[]).forEach((n,i)=>{
+        const v=parseFloat(vals[i])||0;
+        if(cat.name==='passing'){if(n==='completions')g.passCmp=v;if(n==='attempts')g.passAtt=v;if(n==='passingYards'||n==='yards')g.passYds=v;if(n==='touchdowns')g.passTD=v;if(n==='interceptions')g.passInt=v;}
+        else if(cat.name==='rushing'){if(n==='carries'||n==='rushingAttempts')g.rushAtt=v;if(n==='rushingYards'||n==='yards')g.rushYds=v;if(n==='touchdowns')g.rushTD=v;}
+        else if(cat.name==='receiving'){if(n==='receptions')g.rec=v;if(n==='targets')g.targets=v;if(n==='receivingYards'||n==='yards')g.recYds=v;if(n==='touchdowns')g.recTD=v;}
+      });
+    }
+    return g;
+  }).filter(Boolean).sort((a,b)=>b._date.localeCompare(a._date));
+}
+async function getNFLLog(id){const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/athletes/${id}/gamelog`);return parseESPNFootballLog(await r.json());}
+async function getCFBLog(id){const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/college-football/athletes/${id}/gamelog`);return parseESPNFootballLog(await r.json());}
+
+async function getWNBALog(id){
+  const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/athletes/${id}/gamelog`);
+  const d=await r.json();
+  const evMap=d.events||{};
+  const season=d.seasonTypes?.find(s=>s.id===2)||d.seasonTypes?.[0];
+  if(!season)return[];
+  const cat=season.categories?.[0];if(!cat)return[];
+  const names=cat.names||[];
+  const fi=(n)=>names.findIndex(x=>x.toLowerCase()===n.toLowerCase());
+  const ptsI=fi('pts'),rebI=fi('reb'),astI=fi('ast'),stlI=fi('stl'),blkI=fi('blk');
+  const fg3I=names.findIndex(x=>x.includes('3P')||x.includes('3p')||x==='3PM');
+  return(cat.events||[]).map((eid,ei)=>{
+    const ev=evMap[eid];if(!ev)return null;
+    const vals=cat.totals?.[ei]||[];
+    return{pts:parseFloat(vals[ptsI])||0,reb:rebI>=0?parseFloat(vals[rebI])||0:0,ast:astI>=0?parseFloat(vals[astI])||0:0,stl:stlI>=0?parseFloat(vals[stlI])||0:0,blk:blkI>=0?parseFloat(vals[blkI])||0:0,fg3m:fg3I>=0?parseFloat(vals[fg3I])||0:0,_date:ev.gameDate?.split('T')[0]||'',_opp:ev.opponent?.displayName||'',win:ev.winner||false};
+  }).filter(Boolean).reverse();
+}
+
+// ── Dota 2 helpers (OpenDota API — free, no key needed) ───────────────────────
+async function searchDota(q){const r=await fetch(`https://api.opendota.com/api/search?q=${encodeURIComponent(q)}`);const d=await r.json();return(Array.isArray(d)?d:[]).slice(0,8).map(p=>({id:String(p.account_id),name:p.personaname||'Unknown',sub:'Dota 2 Player'}));}
+async function getDotaLog(accountId){
+  const r=await fetch(`https://api.opendota.com/api/players/${accountId}/matches?limit=40&lobby_type=1`);
+  const d=await r.json();
+  if(!Array.isArray(d))return[];
+  return d.filter(m=>typeof m.kills==='number').map(m=>({kills:m.kills,deaths:m.deaths,assists:m.assists,gpm:m.gold_per_min||0,xpm:m.xp_per_min||0,lastHits:m.last_hits||0,heroDmg:Math.round((m.hero_damage||0)/1000*10)/10,_date:new Date((m.start_time||0)*1000).toISOString().split('T')[0],_opp:'',win:m.radiant_win===(m.player_slot<128)}));
+}
+
+// ── Valorant helpers (Henrik API — free, no key needed) ───────────────────────
+async function searchValorant(q){
+  const parts=(q||'').split('#');
+  if(parts.length<2||!parts[1].trim())return[{id:'__hint__',name:q,sub:'Enter as Name#Tag (e.g. TenZ#000)'}];
+  const[name,tag]=parts;
+  try{
+    const r=await fetch(`https://api.henrikdev.xyz/valorant/v2/account/${encodeURIComponent(name)}/${encodeURIComponent(tag.trim())}`);
+    const d=await r.json();
+    if(d.status===200&&d.data?.puuid){const reg=d.data.region?.toLowerCase()||'na';return[{id:`${reg}|${name}|${tag.trim()}|${d.data.puuid}`,name:`${d.data.name}#${d.data.tag}`,sub:`Valorant · ${reg.toUpperCase()}`}];}
+  }catch{}
+  return[];
+}
+async function getValorantLog(playerId){
+  const parts=playerId.split('|');if(parts.length<3)return[];
+  const[region,name,tag,puuid]=parts;
+  try{
+    const r=await fetch(`https://api.henrikdev.xyz/valorant/v3/matches/${region}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}?size=20`);
+    const d=await r.json();if(!Array.isArray(d.data))return[];
+    return d.data.map(m=>{
+      const p=m.players?.all_players?.find(pl=>pl.puuid===puuid||(pl.name===name&&pl.tag===tag));
+      if(!p)return null;
+      const hs=p.stats?.headshots||0,bs=p.stats?.bodyshots||0,ls=p.stats?.legshots||0,tot=hs+bs+ls;
+      return{kills:p.stats?.kills||0,deaths:p.stats?.deaths||0,assists:p.stats?.assists||0,hs,hsP:tot>0?Math.round(hs/tot*100):0,_date:new Date((m.metadata?.game_start||0)*1000).toISOString().split('T')[0],_opp:'',win:m.teams?.[p.team?.toLowerCase()]?.has_won||false};
+    }).filter(Boolean);
+  }catch{return[];}
 }
 
 // ── Esports proxies ───────────────────────────────────────────────────────────
@@ -304,6 +401,7 @@ function App(){
   const isES=sport==="ESPORTS";
   const isCS2=isES&&esGame==="cs2";
   const isLoL=isES&&esGame==="lol";
+  const isDota=isES&&esGame==="dota2";
   
   const isPit=isMLB&&mlbGrp==="pitching";
   const statList=isMLB?(mlbGrp==="hitting"?HIT_STATS:PIT_STATS):isNHL?NHL_STATS:(ES_STATS[esGame]||ES_STATS.cs2);
@@ -361,6 +459,11 @@ function App(){
         setDebug("Fetching LoL tournament match history...");
         const log=await getLoLLog(player.teamId,player.teamCode,player.leagueName,player.playerName||player.name);
         if(!log.length)throw new Error(`No tournament games found for ${player.name}. The LoL Esports API may not have recent data for this player's league yet.`);
+        setGameLog(log);
+      }else if(isDota){
+        setDebug("Fetching Dota 2 match history...");
+        const log=await getDotaLog(player.id);
+        if(!log.length)throw new Error("No Dota 2 professional matches found. Try searching their Steam name.");
         setGameLog(log);
       }else{
         const season=currentSeason();
@@ -454,7 +557,7 @@ function App(){
       {isMLB&&<div className="card"><div className="label-sm">PLAYER TYPE</div><div style={{display:"flex"}}><button className={"sport-btn"+(mlbGrp==="hitting"?" active":"")} onClick={()=>setMlbGrp("hitting")}>BATTER</button><button className={"sport-btn"+(mlbGrp==="pitching"?" active":"")} onClick={()=>setMlbGrp("pitching")}>PITCHER</button></div></div>}
 
       {/* Esports game */}
-      {isES&&<div className="card"><div className="label-sm">GAME</div><div style={{display:"flex"}}><button className={"sport-btn"+(esGame==="cs2"?" active":"")} onClick={()=>setEsGame("cs2")}>CS2</button><button className={"sport-btn"+(esGame==="lol"?" active":"")} onClick={()=>setEsGame("lol")}>LEAGUE OF LEGENDS</button></div></div>}
+      {isES&&<div className="card"><div className="label-sm">GAME</div><div style={{display:"flex"}}><button className={"sport-btn"+(esGame==="cs2"?" active":"")} onClick={()=>setEsGame("cs2")}>CS2</button><button className={"sport-btn"+(esGame==="lol"?" active":"")} onClick={()=>setEsGame("lol")}>LEAGUE OF LEGENDS</button><button className={"sport-btn"+(esGame==="dota2"?" active":"")} onClick={()=>setEsGame("dota2")}>DOTA 2</button></div></div>}
 
       {/* MLB today's games */}
       {isMLB&&(
@@ -504,6 +607,16 @@ function App(){
         />
       )}
 
+      {isDota&&(
+        <SearchBox
+          label="DOTA 2 PLAYER SEARCH"
+          placeholder="Type Steam display name (e.g. Yatoro, Collapse, Puppey...)"
+          onSearch={searchDota}
+          onSelect={onSelectPlayer}
+          selected={player}
+          hint="Searches OpenDota · Professional lobby matches · Kills · Deaths · Assists · GPM"
+        />
+      )}
       {isNHL&&<SearchBox
         label="NHL PLAYER SEARCH"
         hint="Searches all active NHL players · Goals · Assists · Points · Shots"
