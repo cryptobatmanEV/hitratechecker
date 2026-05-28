@@ -1,50 +1,51 @@
 export const config = { maxDuration: 30 };
 const KEY = process.env.GRID_API_KEY;
+const SCRAPER = process.env.SCRAPER_API_KEY;
 const CD = 'https://api-op.grid.gg/central-data/graphql';
-const SS = 'https://api-op.grid.gg/live-data-feed/series-state/graphql';
-const SP = `id name kills killAssistsGiven ... on SeriesPlayerStateCs2{headshots} ... on SeriesPlayerStateCsgo{headshots}`;
 async function cdQ(q){const r=await fetch(CD,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':KEY},body:JSON.stringify({query:q})});return r.json();}
-async function ssQ(q){const r=await fetch(SS,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':KEY},body:JSON.stringify({query:q})});return r.json();}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
-  const out = {};
+  const t = () => Date.now();
+  const start = t();
+  const out = { timings: {} };
 
-  // Exact replication of Pass 2 for Liquid on May 13
-  const isoDate = '2026-05-13';
-  const oppSearch = 'Liquid';
-  const slug = 'swisher';
+  // 1. How long does a single HLTV scraper fetch take?
+  try {
+    const s = t();
+    const r = await fetch(`https://api.scraperapi.com?api_key=${SCRAPER}&url=${encodeURIComponent('https://www.hltv.org/stats/players/matches/7592/device?startDate=2023-09-27&endDate=2026-05-28')}`,{headers:{Accept:'text/html'}});
+    await r.text();
+    out.timings.hltv_fetch_ms = t() - s;
+  } catch(e) { out.timings.hltv_fetch_ms = `ERROR: ${e.message}`; }
 
-  // Step 1: find opponent team
-  const oppQ = await cdQ(`{teams(filter:{name:{contains:"${oppSearch}"}},first:5){edges{node{id name}}}}`);
-  out.step1_teams = oppQ?.data?.teams?.edges?.map(e=>e.node)||[];
-  out.step1_error = oppQ?.errors;
-  const oppIds = out.step1_teams.map(t=>t.id);
+  // 2. How long does a single GRID team search take?
+  try {
+    const s = t();
+    await cdQ(`{teams(filter:{name:{contains:"Liquid"}},first:5){edges{node{id name}}}}`);
+    out.timings.grid_team_search_ms = t() - s;
+  } catch(e) { out.timings.grid_team_search_ms = `ERROR: ${e.message}`; }
 
-  // Step 2: find series ±1 day
-  const gte = '2026-05-12T00:00:00Z';
-  const lte = '2026-05-14T23:59:59Z';
-  const srQ = await cdQ(`{allSeries(filter:{teamIds:{in:${JSON.stringify(oppIds)}},startTimeScheduled:{gte:"${gte}",lte:"${lte}"}},first:5,orderBy:StartTimeScheduled){edges{node{id startedAt tournament{name} teams{baseInfo{name}}}}}}`);
-  out.step2_series = srQ?.data?.allSeries?.edges?.map(e=>e.node?.id+'|'+e.node?.startedAt?.split('T')[0]+'|'+e.node?.teams?.map(t=>t.baseInfo?.name).join(' vs '))||[];
-  out.step2_error = srQ?.errors;
-  const sid = srQ?.data?.allSeries?.edges?.[0]?.node?.id;
+  // 3. How long does a GRID allSeries query take?
+  try {
+    const s = t();
+    await cdQ(`{allSeries(filter:{teamIds:{in:["47361"]},startTimeScheduled:{gte:"2026-04-01T00:00:00Z",lte:"2026-04-30T23:59:59Z"}},first:5,orderBy:StartTimeScheduled){edges{node{id startTimeScheduled}}}}`);
+    out.timings.grid_allseries_ms = t() - s;
+  } catch(e) { out.timings.grid_allseries_ms = `ERROR: ${e.message}`; }
 
-  // Step 3: Series State
-  if(sid) {
-    const ss = await ssQ(`{seriesState(id:"${sid}"){id startedAt teams{id name players{id name kills ...on SeriesPlayerStateCs2{headshots}}}}}`);
-    out.step3_series_id = sid;
-    out.step3_error = ss?.errors;
-    const allPlayers = [];
-    for(const team of ss?.data?.seriesState?.teams||[]) {
-      for(const p of team.players||[]) {
-        allPlayers.push({team:team.name, name:p.name, kills:p.kills, hs:p.headshots});
-      }
+  // 4. Simulate 15 sequential team searches (worst case Pass 2)
+  try {
+    const s = t();
+    const opponents = ['Liquid','HEROIC','FlyQuest','BIG','NiP','G2','Falcons','MOUZ','Eternal Fire','Wildcard','Legacy','Aurora','Monte','Alliance','FUT'];
+    for(const opp of opponents) {
+      await cdQ(`{teams(filter:{name:{contains:"${opp}"}},first:3){edges{node{id}}}}`);
     }
-    out.step3_all_players = allPlayers;
-    const swisher = allPlayers.find(p=>p.name?.toLowerCase().includes(slug));
-    out.step3_swisher_found = !!swisher;
-    out.step3_swisher = swisher;
-  }
+    out.timings.pass2_15_team_searches_ms = t() - s;
+    out.timings.pass2_per_search_avg_ms = Math.round((t()-s)/15);
+  } catch(e) { out.timings.pass2_15_searches_ms = `ERROR: ${e.message}`; }
+
+  out.timings.total_elapsed_ms = t() - start;
+  out.budget_remaining_ms = 28000 - out.timings.total_elapsed_ms;
+  out.safe_pass2_limit = Math.floor(out.budget_remaining_ms / (out.timings.pass2_per_search_avg_ms * 3 || 600));
 
   return res.json(out);
 }
