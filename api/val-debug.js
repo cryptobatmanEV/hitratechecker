@@ -10,59 +10,47 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const out = {};
 
-  // Test 1: Can we fetch VLR.gg search directly (no ScraperAPI)?
+  // Step 1: Search orlando API for "aspas"
   try {
-    const r = await fetch('https://www.vlr.gg/search/?q=aspas&type=players', { headers: HEADERS });
-    out.vlrgg_search_direct = {
-      status: r.status,
-      blocked: r.status === 403 || r.status === 503,
-      content_length: (await r.text()).length,
-    };
+    const r = await fetch('https://vlr.orlandomm.net/api/v1/players?limit=100&page=1');
+    const d = await r.json();
+    const players = d?.data || [];
+    const match = players.filter(p =>
+      (p.name || '').toLowerCase().includes('aspas') ||
+      (p.name || '').toLowerCase().includes('zekken') ||
+      (p.name || '').toLowerCase().includes('nats') ||
+      (p.name || '').toLowerCase().includes('derke')
+    );
+    out.orlando_search = { total: d?.pagination?.totalElements, matched: match };
   } catch (e) {
-    out.vlrgg_search_direct = { error: e.message };
+    out.orlando_search = { error: e.message };
   }
 
-  // Test 2: Can we fetch a VLR.gg player page directly? (aspas = player id 2)
+  // Step 2: Fetch aspas's actual VLR.gg player page (known ID = 1093)
+  // aspas is a well-known active VCT player
   try {
-    const r = await fetch('https://www.vlr.gg/player/2/aspas', { headers: HEADERS });
+    const r = await fetch('https://www.vlr.gg/player/1093/aspas', { headers: HEADERS });
     const html = await r.text();
-    out.vlrgg_player_direct = {
+    out.aspas_page = {
       status: r.status,
-      blocked: r.status === 403 || r.status === 503,
-      has_match_table: html.includes('wf-table'),
-      has_kills: html.includes('kills') || html.includes('kill'),
       content_length: html.length,
-      sample: html.slice(0, 300),
+      has_wf_table: html.includes('wf-table'),
+      has_mod_stat: html.includes('mod-stat'),
+      has_kills: html.includes('kills') || html.includes('Kills'),
+      has_acs: html.includes('ACS') || html.includes('acs'),
+      has_match_history: html.includes('match-item') || html.includes('player-result'),
+      // Show a slice around the stats area
+      stats_area_sample: (() => {
+        const idx = html.indexOf('mod-stat');
+        return idx > -1 ? html.slice(Math.max(0, idx - 100), idx + 500) : 'mod-stat not found';
+      })(),
+      match_table_sample: (() => {
+        const idx = html.indexOf('wf-table');
+        return idx > -1 ? html.slice(Math.max(0, idx - 100), idx + 500) : 'wf-table not found';
+      })(),
     };
   } catch (e) {
-    out.vlrgg_player_direct = { error: e.message };
-  }
-
-  // Test 3: Does vlrggapi community API have per-match data?
-  try {
-    const r = await fetch('https://vlrggapi.vercel.app/stats?region=na&timespan=30');
-    const d = await r.json();
-    const seg = d?.data?.segments?.[0];
-    out.vlrggapi_stats = {
-      status: r.status,
-      has_data: !!seg,
-      sample_fields: seg ? Object.keys(seg) : [],
-      has_per_match: false, // aggregate only based on docs
-    };
-  } catch (e) {
-    out.vlrggapi_stats = { error: e.message };
-  }
-
-  // Test 4: Does vlr.orlandomm.net have player match history?
-  try {
-    const r = await fetch('https://vlr.orlandomm.net/api/v1/players?limit=1&page=1');
-    const d = await r.json();
-    out.orlando_players = {
-      status: r.status,
-      sample: JSON.stringify(d).slice(0, 400),
-    };
-  } catch (e) {
-    out.orlando_players = { error: e.message };
+    out.aspas_page = { error: e.message };
   }
 
   return res.json(out);
