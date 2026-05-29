@@ -1,71 +1,43 @@
 export const config = { maxDuration: 30 };
 
-const H = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Accept': 'text/html,*/*',
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+const get = async (url) => {
+  const r = await fetch(url.replace('http://','https://'), { headers:{'User-Agent':UA} });
+  if (!r.ok) throw new Error(`ESPN ${r.status}`);
+  return r.json();
 };
-
-function parsePlayerFromSearch(html) {
-  // VLR search results: <a href="/player/123/aspas" class="search-item">
-  const matches = [...html.matchAll(/href="\/player\/(\d+)\/([^"]+)"/g)];
-  return matches.slice(0, 5).map(m => ({ id: m[1], slug: m[2] }));
-}
-
-function parseMatchLinks(html) {
-  // Match links look like: href="/12345/team-a-vs-team-b/..."
-  const matches = [...html.matchAll(/href="\/(\d{5,}\/[^"]+)"/g)];
-  return [...new Set(matches.map(m => m[1]))].slice(0, 5);
-}
-
-function parseMatchStats(html, playerSlug) {
-  // Look for player row in match page
-  const hasStats = html.toLowerCase().includes('kill');
-  const hasAcs   = html.toLowerCase().includes('acs');
-  const hasPlayer = html.toLowerCase().includes(playerSlug.toLowerCase());
-
-  // Try to find stat rows
-  const tableIdx = html.indexOf('mod-player');
-  const sample = tableIdx > -1 ? html.slice(tableIdx, tableIdx + 800) : 'mod-player not found';
-  return { hasStats, hasAcs, hasPlayer, sample };
-}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  const out = {};
 
-  // Step 1: Parse search HTML to get aspas's real player ID
-  const searchR = await fetch('https://www.vlr.gg/search/?q=aspas&type=players', { headers: H });
-  const searchHtml = await searchR.text();
-  const players = parsePlayerFromSearch(searchHtml);
-  out.step1_search_players = players;
+  // Isaiah Hartenstein - search to get his ESPN ID
+  const search = await get('https://site.api.espn.com/apis/common/v3/search?query=Hartenstein&limit=5&type=player&sport=basketball&league=nba');
+  const player = search.items?.find(p => p.displayName?.includes('Hartenstein'));
+  if (!player) return res.json({ error: 'Player not found', items: search.items?.map(p=>p.displayName) });
 
-  if (!players.length) {
-    return res.json({ ...out, error: 'No players found in search HTML' });
+  const id = player.id;
+  const out = { player: player.displayName, id };
+
+  // Get current season eventlog (small limit to be fast)
+  const el = await get(`https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/2026/athletes/${id}/eventlog?limit=10`);
+  const items = (el.events?.items || []).filter(i => i.played);
+  out.total_played_items = items.length;
+
+  // Fetch the competition for first 3 games and show ALL top-level fields
+  const samples = [];
+  for (const item of items.slice(0, 3)) {
+    try {
+      const comp = await get(item.competition.$ref);
+      samples.push({
+        comp_top_keys: Object.keys(comp),
+        comp_season:   comp.season,         // does season exist? what's in it?
+        comp_type:     comp.type,           // is there a top-level type?
+        comp_date:     comp.date?.slice(0,10),
+        comp_status_type: comp.status?.$ref ? 'ref' : comp.status?.type,
+      });
+    } catch(e) { samples.push({ error: e.message }); }
   }
-
-  const { id, slug } = players[0];
-  out.found_player = { id, slug };
-
-  // Step 2: Fetch player matches page with correct ID
-  const matchesR = await fetch(`https://www.vlr.gg/player/matches/${id}`, { headers: H });
-  const matchesHtml = await matchesR.text();
-  const matchLinks = parseMatchLinks(matchesHtml);
-  out.step2_match_links = {
-    page_size: matchesHtml.length,
-    links_found: matchLinks,
-    has_any_match_links: matchLinks.length > 0,
-  };
-
-  // Step 3: If we got match links, fetch the first match page and check for stats
-  if (matchLinks.length > 0) {
-    const matchR = await fetch(`https://www.vlr.gg/${matchLinks[0]}`, { headers: H });
-    const matchHtml = await matchR.text();
-    out.step3_match_page = {
-      url: matchLinks[0],
-      page_size: matchHtml.length,
-      ...parseMatchStats(matchHtml, slug),
-    };
-  }
+  out.competition_samples = samples;
 
   return res.json(out);
 }
