@@ -361,6 +361,7 @@ function App(){
   const [gameLog,setGameLog]=useState([]);
   const [carLog,setCarLog]  =useState([]);
   const [logPage,setLogPage]=useState(0);
+  const [wnbaNextOpp,setWnbaNextOpp]=useState(null);
   const [carStats,setCarSt] =useState(null);
   const [vsP,setVsP]        =useState(null);
   const [vsT,setVsT]        =useState(null);
@@ -380,13 +381,13 @@ function App(){
   const isPit=isMLB&&mlbGrp==="pitching";
   const statList=isMLB?(mlbGrp==="hitting"?HIT_STATS:PIT_STATS):isNHL?NHL_STATS:isWNBA?WNBA_STATS:(ES_STATS[esGame]||ES_STATS.cs2);
 
-  const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setH2hIn("");setH2hAct("");setOppTmId(null);setOppTm("");setLogPage(0);};
+  const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setH2hIn("");setH2hAct("");setOppTmId(null);setOppTm("");setLogPage(0);setWnbaNextOpp(null);};
   useEffect(()=>{clearAll();setMapScope("total");},[sport,mlbGrp,esGame]);
   useEffect(()=>{if(isMLB){setGLoad(true);getTodayGames().then(g=>setToday(g)).catch(()=>{}).finally(()=>setGLoad(false));}},[sport]);
   useEffect(()=>{const h=e=>{if(pWrap.current&&!pWrap.current.contains(e.target))setShowPD(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]);
 
   const onSelectPlayer=async p=>{
-    setPlayer(p);setGameLog([]);setCarLog([]);setError("");setVsP(null);setVsT(null);setHands(null);setDayNt(null);setCarSt(null);setPitcher(null);setPitchQ("");setPInfo(null);setOppTmId(null);setOppTm("");
+    setPlayer(p);setGameLog([]);setCarLog([]);setError("");setVsP(null);setVsT(null);setHands(null);setDayNt(null);setCarSt(null);setPitcher(null);setPitchQ("");setPInfo(null);setOppTmId(null);setOppTm("");setWnbaNextOpp(null);
     if(isMLB&&todayGames.length>0){
       try{
         const info=await getPlayerInfo(p.id);const tid=info.teamId;
@@ -401,6 +402,12 @@ function App(){
             if(mlbGrp==="pitching"&&oppT.id)setDebug(`Auto-detected: facing ${oppT.name} today`);
           }
         }
+      }catch(e){}
+    }
+    if(isWNBA&&p.teamId){
+      try{
+        const ng=await fetch(`/api/wnba?action=nextgame&teamId=${encodeURIComponent(p.teamId)}`).then(r=>r.json());
+        if(ng?.opp)setWnbaNextOpp(ng);
       }catch(e){}
     }
   };
@@ -671,6 +678,16 @@ function App(){
         {isMLB&&dayNt&&(dayNt.day||dayNt.night)&&(<div className="card"><div className="sec-title">DAY / NIGHT SPLITS · {currentSeason()} Season</div><div style={{display:"flex",gap:8}}><div className="rate-card" style={{flex:1}}><div className="lbl">DAY GAMES</div>{dayNt.day?<><div className="pct" style={{color:"#ffc800",fontSize:16}}>{dayNt.day.avg||dayNt.day.era||"—"}</div><div className="frac">{dayNt.day.atBats||dayNt.day.inningsPitched||0} {mlbGrp==="hitting"?"AB":"IP"}</div><div className="avg">{mlbGrp==="hitting"?`${dayNt.day.homeRuns||0} HR · ${dayNt.day.strikeOuts||0} K`:`${dayNt.day.strikeOuts||0} K`}</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div><div className="rate-card" style={{flex:1}}><div className="lbl">NIGHT GAMES</div>{dayNt.night?<><div className="pct" style={{color:"#a0b4ff",fontSize:16}}>{dayNt.night.avg||dayNt.night.era||"—"}</div><div className="frac">{dayNt.night.atBats||dayNt.night.inningsPitched||0} {mlbGrp==="hitting"?"AB":"IP"}</div><div className="avg">{mlbGrp==="hitting"?`${dayNt.night.homeRuns||0} HR · ${dayNt.night.strikeOuts||0} K`:`${dayNt.night.strikeOuts||0} K`}</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div></div></div>)}
         {isMLB&&mlbGrp==="hitting"&&pitcher&&(<div className="vs-card"><div className="vs-title">BATTER VS PITCHER · {playerName} vs {pitcher.name}{pitcherInfo?.pitchHand&&<span className={`pill-tag ${pitcherInfo.pitchHand==="L"?"tag-l":"tag-r"}`}>{pitcherInfo.pitchHand}HP</span>}{platoAdv&&<span className={`pill-tag ${platoAdv.favorable?"tag-good":"tag-bad"}`}>{platoAdv.favorable?"PLATOON ADV":"PLATOON DIS"}</span>}</div>{vsP?<><div className="stat-grid-4"><SB label="AVG" value={vsP.avg||"—"} color="#80a8ff"/><SB label="AB" value={vsP.atBats} color="#80a8ff"/><SB label="HITS" value={vsP.hits} color="#80a8ff"/><SB label="HR" value={vsP.homeRuns} color="#80a8ff"/><SB label="RBI" value={vsP.rbi} color="#80a8ff"/><SB label="BB" value={vsP.baseOnBalls} color="#80a8ff"/><SB label="K" value={vsP.strikeOuts} color="#80a8ff"/><SB label="OPS" value={vsP.ops||"—"} color="#80a8ff"/></div>{vsPVal!=null&&<div style={{marginTop:8,fontSize:11,color:"rgba(255,255,255,0.5)"}}>Career {statList[statIdx].label} vs {pitcher.name}: <span style={{marginLeft:4,fontWeight:700,color:vsPVal>lineNum?"#00dc6e":"#ff6b6b"}}>{vsPVal}</span><span style={{marginLeft:6,fontSize:10,color:vsPVal>lineNum?"#00dc6e":"#ff6b6b"}}>({vsPVal>lineNum?"OVER":"UNDER"} {lineNum})</span></div>}</>:<div style={{fontSize:11,color:"rgba(255,255,255,0.3)"}}>No career BVP data found.</div>}</div>)}
 
+        {isWNBA&&wnbaNextOpp&&wnbaNextOpp.opp&&<div className="card">
+          <div className="label-sm">NEXT OPPONENT</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4}}>
+            <div style={{fontSize:13,fontWeight:600,color:"#fff"}}>{wnbaNextOpp.isHome?"vs":"@"} {wnbaNextOpp.opp}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{wnbaNextOpp.date}</span>
+              <button className="sport-btn active" style={{borderRadius:2,padding:"2px 10px",fontSize:10}} onClick={()=>{setH2hIn(wnbaNextOpp.opp);setH2hAct(wnbaNextOpp.opp);}}>Set H2H</button>
+            </div>
+          </div>
+        </div>}
         <div className="card"><div className="label-sm">H2H OPPONENT FILTER</div><div style={{display:"flex",gap:8}}><input className="tool-input" type="text" placeholder="Team or opponent name" value={h2hIn} onChange={e=>setH2hIn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&setH2hAct(h2hIn.trim())} style={{flex:1}}/><button className="sport-btn active" style={{flex:"0 0 auto",borderRadius:2,padding:"0 16px"}} onClick={()=>setH2hAct(h2hIn.trim())}>APPLY</button>{h2hAct&&<button className="sport-btn" style={{flex:"0 0 auto",borderRadius:2,padding:"0 12px",color:"#ff6b6b",borderColor:"rgba(255,77,77,0.3)"}} onClick={()=>{setH2hAct("");setH2hIn("");}}>CLEAR</button>}</div>{h2hAct&&<div style={{marginTop:8,fontSize:11,color:h2hG.length?"#00dc6e":"rgba(255,77,77,0.7)"}}>{h2hG.length?`${h2hG.length} games vs "${h2hAct}"`:`No games found vs "${h2hAct}"`}</div>}</div>
 
         {isCS2&&(statList[statIdx]?.label==="Headshots"||statList[statIdx]?.label==="HS %")&&<div style={{background:"rgba(255,165,0,0.06)",border:"1px solid rgba(255,165,0,0.2)",borderRadius:4,padding:"10px 14px",fontSize:11,color:"rgba(255,200,100,0.8)",marginBottom:8}}>⚠️ HS data is sourced from GRID's official broadcast feed. Due to licensing agreements, some events may not be covered — affected matches will show 0. This is a data availability limitation, not a reflection of the player's actual stats.</div>}
