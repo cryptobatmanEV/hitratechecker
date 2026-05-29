@@ -77,6 +77,25 @@ async function resolveCompetition(compRef, teamId, teamMap) {
   }
 }
 
+// Process games in batches to stay within timeout limits
+async function fetchGameStats(items, teamMap, batchSize = 40) {
+  const results = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map(async item => {
+      try {
+        const [statsData, compInfo] = await Promise.all([
+          espnGet(item.statistics.$ref),
+          resolveCompetition(item.competition.$ref, item.teamId, teamMap),
+        ]);
+        return { ...extractStats(statsData.splits?.categories), ...compInfo };
+      } catch { return null; }
+    }));
+    results.push(...batchResults);
+  }
+  return results.filter(Boolean);
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store');
@@ -131,37 +150,37 @@ export default async function handler(req, res) {
 
       const year = new Date().getFullYear();
 
+      const teamMap = await fetchTeamMap();
+
       let items;
-      if (scope === 'career') {
-        const careerItems = [];
-        for (const s of [year - 1, year - 2, year - 3]) {
-          try {
-            careerItems.push(...await fetchEventlogItems(id, s));
-          } catch {}
-        }
-        items = careerItems;
-      } else {
+      if (scope === 'season') {
         items = await fetchEventlogItems(id, year);
+      } else {
+        // Career: get debut year from ESPN profile so window anchors to career
+        // start, not a rolling cutoff. Cap at 12 seasons for WNBA.
+        let debutYear = year - 10;
+        try {
+          const profile = await espnGet(
+            `https://sports.core.api.espn.com/v2/sports/basketball/leagues/wnba/athletes/${id}`
+          );
+          const exp = profile.experience?.years ?? 10;
+          debutYear = year - exp;
+        } catch {}
+        const startYear = Math.max(debutYear, year - 12);
+        const careerYears = Array.from(
+          { length: year - startYear },
+          (_, i) => year - 1 - i
+        );
+        const allSeasons = await Promise.all(
+          careerYears.map(y => fetchEventlogItems(id, y).catch(() => []))
+        );
+        items = allSeasons.flat();
       }
 
       if (!items.length) return res.json([]);
 
-      // Fetch team map in parallel with stats/competition
-      const teamMap = await fetchTeamMap();
-
-      const games = await Promise.all(items.map(async item => {
-        try {
-          const [statsData, compInfo] = await Promise.all([
-            espnGet(item.statistics.$ref),
-            resolveCompetition(item.competition.$ref, item.teamId, teamMap),
-          ]);
-          return { ...extractStats(statsData.splits?.categories), ...compInfo };
-        } catch { return null; }
-      }));
-
-      return res.json(
-        games.filter(Boolean).sort((a, b) => b._date.localeCompare(a._date))
-      );
+      const games = await fetchGameStats(items, teamMap);
+      return res.json(games.sort((a, b) => b._date.localeCompare(a._date)));
     }
 
     return res.status(400).json({ error: 'Unknown action' });
