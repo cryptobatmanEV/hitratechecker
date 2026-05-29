@@ -41,6 +41,9 @@ function extractStats(categories = []) {
     fg3m: m.threePointFieldGoalsMade ?? 0,
     tov:  m.turnovers                ?? 0,
     min:  m.minutes                  ?? 0,
+    fgm:  m.fieldGoalsMade           ?? 0,
+    ftm:  m.freeThrowsMade           ?? 0,
+    fta:  m.freeThrowsAttempted      ?? 0,
   };
 }
 
