@@ -1,51 +1,38 @@
 export const config = { maxDuration: 30 };
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  const id = req.query.id || '4433403';
   const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
-
   const get = async (url) => {
     const r = await fetch(url.replace('http://','https://'), { headers:{'User-Agent':UA} });
-    if (!r.ok) throw new Error(`ESPN ${r.status}: ${url.slice(0,80)}`);
+    if (!r.ok) throw new Error(`ESPN ${r.status}`);
     return r.json();
   };
 
-  const out = {};
-
-  // Step 1: get first played item
-  const el = await get(`https://sports.core.api.espn.com/v2/sports/basketball/leagues/wnba/seasons/2026/athletes/${id}/eventlog?limit=5`);
-  const items = (el.events?.items || []).filter(i => i.played);
-  out.played_items_count = items.length;
-
-  if (!items.length) { return res.json({ ...out, error: 'no played items' }); }
-
-  const item = items[0];
-  out.item_stats_ref = item.statistics?.$ref || 'MISSING';
-  out.item_comp_ref  = item.competition?.$ref  || 'MISSING';
-
-  // Step 2: fetch stats $ref
-  try {
-    const stats = await get(item.statistics.$ref);
-    out.stats_ok = true;
-    out.stats_categories = (stats.splits?.categories || []).map(c => c.name);
-    const flat = {};
-    for (const cat of stats.splits?.categories || [])
-      for (const s of cat.stats || []) flat[s.name] = s.value;
-    out.stats_pts   = flat.points;
-    out.stats_reb   = flat.rebounds;
-    out.stats_ast   = flat.assists;
-  } catch(e) { out.stats_error = e.message; }
-
-  // Step 3: fetch competition $ref
-  try {
-    const comp = await get(item.competition.$ref);
-    out.comp_ok    = true;
-    out.comp_date  = comp.date;
-    out.comp_competitor_count = comp.competitors?.length;
-    out.comp_first_competitor_keys = Object.keys(comp.competitors?.[0] || {});
-    out.comp_competitor_ids = comp.competitors?.map(c => c.id);
-    out.comp_scores = comp.competitors?.map(c => ({ id: c.id, score: c.score }));
-  } catch(e) { out.comp_error = e.message; }
-
-  return res.json(out);
+  // Get competition for game 401856893 (confirmed working)
+  const comp = await get('https://sports.core.api.espn.com/v2/sports/basketball/leagues/wnba/events/401856893/competitions/401856893');
+  
+  // Show FULL competitor objects so we know exactly what fields are inline vs $ref
+  const competitors = comp.competitors || [];
+  
+  return res.json({
+    date: comp.date,
+    competitor_0: {
+      id: competitors[0]?.id,
+      homeAway: competitors[0]?.homeAway,
+      winner: competitors[0]?.winner,         // is winner inline?
+      score_type: typeof competitors[0]?.score,
+      score_value: competitors[0]?.score,      // inline or $ref?
+      team_type: typeof competitors[0]?.team,
+      team_value: competitors[0]?.team,        // inline or $ref?
+    },
+    competitor_1: {
+      id: competitors[1]?.id,
+      homeAway: competitors[1]?.homeAway,
+      winner: competitors[1]?.winner,
+      score_type: typeof competitors[1]?.score,
+      score_value: competitors[1]?.score,
+      team_type: typeof competitors[1]?.team,
+      team_value: competitors[1]?.team,
+    },
+  });
 }
