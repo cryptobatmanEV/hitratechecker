@@ -360,6 +360,7 @@ function App(){
   const [debug,setDebug]    =useState("");
   const [gameLog,setGameLog]=useState([]);
   const [carLog,setCarLog]  =useState([]);
+  const [logPage,setLogPage]=useState(0);
   const [carStats,setCarSt] =useState(null);
   const [vsP,setVsP]        =useState(null);
   const [vsT,setVsT]        =useState(null);
@@ -379,7 +380,7 @@ function App(){
   const isPit=isMLB&&mlbGrp==="pitching";
   const statList=isMLB?(mlbGrp==="hitting"?HIT_STATS:PIT_STATS):isNHL?NHL_STATS:isWNBA?WNBA_STATS:(ES_STATS[esGame]||ES_STATS.cs2);
 
-  const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setH2hIn("");setH2hAct("");setOppTmId(null);setOppTm("");};
+  const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setH2hIn("");setH2hAct("");setOppTmId(null);setOppTm("");setLogPage(0);};
   useEffect(()=>{clearAll();setMapScope("total");},[sport,mlbGrp,esGame]);
   useEffect(()=>{if(isMLB){setGLoad(true);getTodayGames().then(g=>setToday(g)).catch(()=>{}).finally(()=>setGLoad(false));}},[sport]);
   useEffect(()=>{const h=e=>{if(pWrap.current&&!pWrap.current.contains(e.target))setShowPD(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]);
@@ -511,10 +512,14 @@ function App(){
   const l30=hasData?hitRate(gameLog.slice(0,30),getVal,lineNum,ou):null;
   const seasonR=hasData?hitRate(gameLog,getVal,lineNum,ou):null;
   const careerAllG=(isNHL||isWNBA)?[...gameLog,...carLog]:carLog;
+  const logGames=(isNHL||isWNBA)?careerAllG:gameLog;
+  const LOG_PER_PAGE=30;
+  const logPageCount=Math.ceil(logGames.length/LOG_PER_PAGE);
+  const logSlice=logGames.slice(logPage*LOG_PER_PAGE,(logPage+1)*LOG_PER_PAGE);
   const careerR=careerAllG.length>0?hitRate(careerAllG,getCV,lineNum,ou):null;
-  const h2hG=hasData&&h2hAct?gameLog.filter(g=>(g._opp||"").toLowerCase().includes(h2hAct.toLowerCase())):[];
+  const h2hG=hasData&&h2hAct?logGames.filter(g=>(g._opp||"").toLowerCase().includes(h2hAct.toLowerCase())):[];
   const h2hR=h2hG.length?hitRate(h2hG,getVal,lineNum,ou):null;
-  const splitGames=isNHL?[...gameLog,...carLog]:gameLog;
+  const splitGames=(isNHL||isWNBA)?[...gameLog,...carLog]:gameLog;
   const homeG=hasData?splitGames.filter(g=>g._isHome):[];
   const awayG=hasData?splitGames.filter(g=>!g._isHome):[];
   const homeR=homeG.length?hitRate(homeG,getVal,lineNum,ou):null;
@@ -650,12 +655,12 @@ function App(){
         </div></div>
 
         <div className="card">
-          <div className="sec-title">{playerName} · {statList[statIdx]?.label} {ou==="over"?"Over":"Under"} {lineNum}<span style={{marginLeft:8,fontSize:10,color:"rgba(255,255,255,0.3)",fontWeight:400}}>({gameLog.length} games)</span></div>
+          <div className="sec-title">{playerName} · {statList[statIdx]?.label} {ou==="over"?"Over":"Under"} {lineNum}<span style={{marginLeft:8,fontSize:10,color:"rgba(255,255,255,0.3)",fontWeight:400}}>({logGames.length} games)</span></div>
           <div style={{display:"flex",gap:6,marginBottom:8}}><RateCard label="L5" data={l5}/><RateCard label="L10" data={l10}/><RateCard label="L30" data={l30}/><RateCard label="SEASON" data={seasonR}/></div>
           <div style={{display:"flex",gap:6}}>
             {(isMLB||isNHL||isDota||isWNBA)&&careerR&&<RateCard label="CAREER" data={careerR} gold/>}
-            {(isMLB||isNHL)&&<RateCard label="HOME" data={homeR} empty="No home games"/>}
-            {(isMLB||isNHL)&&<RateCard label="AWAY" data={awayR} empty="No away games"/>}
+            {(isMLB||isNHL||isWNBA)&&<RateCard label="HOME" data={homeR} empty="No home games"/>}
+            {(isMLB||isNHL||isWNBA)&&<RateCard label="AWAY" data={awayR} empty="No away games"/>}
             <RateCard label={"H2H"+(h2hAct?` ${h2hAct.toUpperCase()}`:"")} data={h2hR} empty={h2hAct?"No games":"Set below"}/>
           </div>
         </div>
@@ -670,7 +675,7 @@ function App(){
 
         {isCS2&&(statList[statIdx]?.label==="Headshots"||statList[statIdx]?.label==="HS %")&&<div style={{background:"rgba(255,165,0,0.06)",border:"1px solid rgba(255,165,0,0.2)",borderRadius:4,padding:"10px 14px",fontSize:11,color:"rgba(255,200,100,0.8)",marginBottom:8}}>⚠️ HS data is sourced from GRID's official broadcast feed. Due to licensing agreements, some events may not be covered — affected matches will show 0. This is a data availability limitation, not a reflection of the player's actual stats.</div>}
         <div className="card"><div className="sec-title">Game Log</div>
-          {gameLog.slice(0,30).map((game,i)=>{
+          {logSlice.map((game,i)=>{
             const val=getVal(game);const hit=val!=null&&!isNaN(val)&&(ou==="over"?val>lineNum:val<lineNum);const isH2H=h2hAct&&(game._opp||"").toLowerCase().includes(h2hAct.toLowerCase());
             return(<div key={i} className="game-row" style={isH2H?{background:"rgba(0,220,110,0.04)",borderRadius:2,paddingLeft:4}:{}}>
               <div className={`hit-dot ${val!=null&&!isNaN(val)?(hit?"dot-hit":"dot-miss"):"dot-miss"}`} style={{opacity:val!=null?1:0.3}}/>
@@ -679,7 +684,12 @@ function App(){
               <div style={{fontSize:10,color:"rgba(255,255,255,0.25)",width:34,textAlign:"right"}}>{val!=null&&!isNaN(val)?(hit?"HIT":"MISS"):""}</div>
             </div>);
           })}
-          {gameLog.length>30&&<div style={{textAlign:"center",paddingTop:10,fontSize:10,color:"rgba(255,255,255,0.3)"}}>Showing 30 of {gameLog.length} games</div>}
+          {logPageCount>1&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:12,fontSize:11}}>
+            <button onClick={()=>setLogPage(p=>Math.max(0,p-1))} disabled={logPage===0} style={{background:"rgba(255,255,255,0.08)",border:"none",color:"rgba(255,255,255,0.6)",padding:"4px 10px",borderRadius:4,cursor:"pointer",opacity:logPage===0?0.3:1}}>← Prev</button>
+            <span style={{color:"rgba(255,255,255,0.3)"}}>{logGames.length} games · Page {logPage+1}/{logPageCount}</span>
+            <button onClick={()=>setLogPage(p=>Math.min(logPageCount-1,p+1))} disabled={logPage===logPageCount-1} style={{background:"rgba(255,255,255,0.08)",border:"none",color:"rgba(255,255,255,0.6)",padding:"4px 10px",borderRadius:4,cursor:"pointer",opacity:logPage===logPageCount-1?0.3:1}}>Next →</button>
+          </div>}
+          {logPageCount<=1&&logGames.length>0&&logGames.length<=30&&<div style={{textAlign:"center",paddingTop:10,fontSize:10,color:"rgba(255,255,255,0.3)"}}>Showing {logGames.length} games</div>}
         </div>
 
       </>)}
