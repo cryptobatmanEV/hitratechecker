@@ -66,9 +66,9 @@ async function resolveCompetition(compRef, teamId) {
     // winner is a boolean field directly on each competitor (no $ref needed)
     const win = us?.winner === true;
     const oppName = WNBA_TEAMS[String(opp?.id)] || '';
-    return { date, _opp: oppName, win };
+    return { _date: date, _opp: oppName, win };
   } catch {
-    return { date: '', _opp: '', win: false };
+    return { _date: '', _opp: '', win: false };
   }
 }
 
