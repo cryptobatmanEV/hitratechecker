@@ -3,29 +3,49 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const id = req.query.id || '4433403';
   const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+
   const get = async (url) => {
     const r = await fetch(url.replace('http://','https://'), { headers:{'User-Agent':UA} });
-    const text = await r.text();
-    let data;
-    try { data = JSON.parse(text); } catch { data = text.slice(0,200); }
-    return { status: r.status, ok: r.ok, data };
+    if (!r.ok) throw new Error(`ESPN ${r.status}: ${url.slice(0,80)}`);
+    return r.json();
   };
 
-  const out = { id, year: new Date().getFullYear() };
+  const out = {};
 
-  // Test both URL forms — with and without season
-  const r1 = await get(`https://sports.core.api.espn.com/v2/sports/basketball/leagues/wnba/athletes/${id}/eventlog?limit=5`);
-  out.url_no_season = { status: r1.status, events_count: r1.data?.events?.count, items_length: r1.data?.events?.items?.length, first_item_keys: Object.keys(r1.data?.events?.items?.[0]||{}) };
+  // Step 1: get first played item
+  const el = await get(`https://sports.core.api.espn.com/v2/sports/basketball/leagues/wnba/seasons/2026/athletes/${id}/eventlog?limit=5`);
+  const items = (el.events?.items || []).filter(i => i.played);
+  out.played_items_count = items.length;
 
-  const r2 = await get(`https://sports.core.api.espn.com/v2/sports/basketball/leagues/wnba/seasons/2026/athletes/${id}/eventlog?limit=5`);
-  out.url_with_2026 = { status: r2.status, events_count: r2.data?.events?.count, items_length: r2.data?.events?.items?.length, first_item_keys: Object.keys(r2.data?.events?.items?.[0]||{}) };
+  if (!items.length) { return res.json({ ...out, error: 'no played items' }); }
 
-  const r3 = await get(`https://sports.core.api.espn.com/v2/sports/basketball/leagues/wnba/seasons/2025/athletes/${id}/eventlog?limit=5`);
-  out.url_with_2025 = { status: r3.status, events_count: r3.data?.events?.count, items_length: r3.data?.events?.items?.length };
+  const item = items[0];
+  out.item_stats_ref = item.statistics?.$ref || 'MISSING';
+  out.item_comp_ref  = item.competition?.$ref  || 'MISSING';
 
-  // Check the played flag on items from the no-season URL
-  const items = r1.data?.events?.items || [];
-  out.played_flags = items.map(i => ({ played: i.played, has_stats: !!i.statistics?.$ref }));
+  // Step 2: fetch stats $ref
+  try {
+    const stats = await get(item.statistics.$ref);
+    out.stats_ok = true;
+    out.stats_categories = (stats.splits?.categories || []).map(c => c.name);
+    const flat = {};
+    for (const cat of stats.splits?.categories || [])
+      for (const s of cat.stats || []) flat[s.name] = s.value;
+    out.stats_pts   = flat.points;
+    out.stats_reb   = flat.rebounds;
+    out.stats_ast   = flat.assists;
+  } catch(e) { out.stats_error = e.message; }
+
+  // Step 3: fetch competition $ref
+  try {
+    const comp = await get(item.competition.$ref);
+    out.comp_ok    = true;
+    out.comp_date  = comp.date;
+    out.comp_competitor_count = comp.competitors?.length;
+    out.comp_first_competitor_keys = Object.keys(comp.competitors?.[0] || {});
+    out.comp_competitor_ids = comp.competitors?.map(c => c.id);
+    out.comp_scores = comp.competitors?.map(c => ({ id: c.id, score: c.score }));
+  } catch(e) { out.comp_error = e.message; }
 
   return res.json(out);
 }
