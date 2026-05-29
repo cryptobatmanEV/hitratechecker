@@ -161,6 +161,9 @@ const WNBA_STATS=[
   {label:"PR",        calc:g=>(g.pts||0)+(g.reb||0)},
   {label:"PA",        calc:g=>(g.pts||0)+(g.ast||0)},
   {label:"RA",        calc:g=>(g.reb||0)+(g.ast||0)},
+  {label:"FG Made",   calc:g=>g.fgm},
+  {label:"FT Made",   calc:g=>g.ftm},
+  {label:"FT Attempted",calc:g=>g.fta},
 ];
 const NHL_STATS=[
   {label:'Goals',         calc:g=>g.stat.goals||0},
