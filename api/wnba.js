@@ -46,36 +46,27 @@ async function fetchEventlogItems(athleteId, season) {
   return items;
 }
 
-// Resolve competition: get date, opponent name, W/L
+// WNBA ESPN team ID → name (avoids $ref fetches entirely)
+const WNBA_TEAMS = {
+  '1':'Atlanta Dream','2':'Chicago Sky','3':'Connecticut Sun','4':'Dallas Wings',
+  '5':'Indiana Fever','6':'Las Vegas Aces','7':'Los Angeles Sparks','8':'Minnesota Lynx',
+  '9':'New York Liberty','10':'Phoenix Mercury','11':'Seattle Storm','12':'Washington Mystics',
+  '25':'Golden State Valkyries',
+};
+
+// Single fetch: competition gives date, winner flag, opponent ID
+// No score $refs, no team $refs — 1 call total instead of 4
 async function resolveCompetition(compRef, teamId) {
   try {
     const comp = await espnGet(compRef);
     const date = (comp.date || '').slice(0, 10);
     const competitors = comp.competitors || [];
-
     const us  = competitors.find(c => String(c.id) === String(teamId));
     const opp = competitors.find(c => String(c.id) !== String(teamId));
-
-    // Scores may be inline {value} or $ref
-    const getScore = async (c) => {
-      if (!c) return 0;
-      if (c.score?.value !== undefined) return parseFloat(c.score.value) || 0;
-      if (c.score?.$ref) {
-        try { const s = await espnGet(c.score.$ref); return parseFloat(s.value) || 0; } catch {}
-      }
-      return 0;
-    };
-
-    // Team name may be inline or $ref
-    let oppName = '';
-    if (opp?.team?.$ref) {
-      try { const t = await espnGet(opp.team.$ref); oppName = t.displayName || t.name || ''; } catch {}
-    } else if (opp?.team?.displayName) {
-      oppName = opp.team.displayName;
-    }
-
-    const [ourScore, oppScore] = await Promise.all([getScore(us), getScore(opp)]);
-    return { date, _opp: oppName, win: ourScore > oppScore };
+    // winner is a boolean field directly on each competitor (no $ref needed)
+    const win = us?.winner === true;
+    const oppName = WNBA_TEAMS[String(opp?.id)] || '';
+    return { date, _opp: oppName, win };
   } catch {
     return { date: '', _opp: '', win: false };
   }
