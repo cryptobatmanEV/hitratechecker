@@ -3,7 +3,6 @@ export const config = { maxDuration: 30 };
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
 async function espnGet(url) {
-  // ESPN Core API uses http:// in $refs — upgrade to https
   const r = await fetch(url.replace('http://', 'https://'), {
     headers: { 'User-Agent': UA }
   });
@@ -11,27 +10,40 @@ async function espnGet(url) {
   return r.json();
 }
 
-// Parse stats categories into flat object
+// Fetch WNBA team ID → name from ESPN dynamically (covers all teams inc. expansion)
+async function fetchTeamMap() {
+  try {
+    const data = await espnGet('https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/teams');
+    const map = {};
+    for (const sport of data.sports || []) {
+      for (const league of sport.leagues || []) {
+        for (const entry of league.teams || []) {
+          const t = entry.team;
+          if (t?.id) map[String(t.id)] = t.displayName || t.name || '';
+        }
+      }
+    }
+    return map;
+  } catch { return {}; }
+}
+
 function extractStats(categories = []) {
   const m = {};
   for (const cat of categories) {
-    for (const s of cat.stats || []) {
-      m[s.name] = parseFloat(s.value) ?? 0;
-    }
+    for (const s of cat.stats || []) m[s.name] = parseFloat(s.value) ?? 0;
   }
   return {
-    pts:  m.points                    ?? 0,
-    reb:  m.rebounds                  ?? 0,
-    ast:  m.assists                   ?? 0,
-    stl:  m.steals                    ?? 0,
-    blk:  m.blocks                    ?? 0,
-    fg3m: m.threePointFieldGoalsMade  ?? 0,
-    tov:  m.turnovers                 ?? 0,
-    min:  m.minutes                   ?? 0,
+    pts:  m.points                   ?? 0,
+    reb:  m.rebounds                 ?? 0,
+    ast:  m.assists                  ?? 0,
+    stl:  m.steals                   ?? 0,
+    blk:  m.blocks                   ?? 0,
+    fg3m: m.threePointFieldGoalsMade ?? 0,
+    tov:  m.turnovers                ?? 0,
+    min:  m.minutes                  ?? 0,
   };
 }
 
-// Fetch all pages of a player's eventlog for a season
 async function fetchEventlogItems(athleteId, season) {
   const items = [];
   let page = 1;
@@ -46,27 +58,16 @@ async function fetchEventlogItems(athleteId, season) {
   return items;
 }
 
-// WNBA ESPN team ID → name (avoids $ref fetches entirely)
-const WNBA_TEAMS = {
-  '1':'Atlanta Dream','2':'Chicago Sky','3':'Connecticut Sun','4':'Dallas Wings',
-  '5':'Indiana Fever','6':'Las Vegas Aces','7':'Los Angeles Sparks','8':'Minnesota Lynx',
-  '9':'New York Liberty','10':'Phoenix Mercury','11':'Seattle Storm','12':'Washington Mystics',
-  '25':'Golden State Valkyries',
-};
-
-// Single fetch: competition gives date, winner flag, opponent ID
-// No score $refs, no team $refs — 1 call total instead of 4
-async function resolveCompetition(compRef, teamId) {
+async function resolveCompetition(compRef, teamId, teamMap) {
   try {
     const comp = await espnGet(compRef);
     const date = (comp.date || '').slice(0, 10);
     const competitors = comp.competitors || [];
     const us  = competitors.find(c => String(c.id) === String(teamId));
     const opp = competitors.find(c => String(c.id) !== String(teamId));
-    // winner is a boolean field directly on each competitor (no $ref needed)
-    const win = us?.winner === true;
+    const win    = us?.winner === true;
     const _isHome = us?.homeAway === 'home';
-    const oppName = WNBA_TEAMS[String(opp?.id)] || '';
+    const oppName = teamMap[String(opp?.id)] || '';
     return { _date: date, _opp: oppName, win, _isHome };
   } catch {
     return { _date: '', _opp: '', win: false, _isHome: false };
@@ -77,7 +78,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store');
 
-  const { action, q, id, scope } = req.query;
+  const { action, q, id, scope, teamId } = req.query;
 
   try {
     // ── Search ────────────────────────────────────────────────────────────────
@@ -90,11 +91,35 @@ export default async function handler(req, res) {
         .filter(p => p.isActive && !p.isRetired)
         .slice(0, 8)
         .map(p => ({
-          id:   p.id,
-          name: p.displayName,
-          sub:  p.teamRelationships?.[0]?.displayName || 'WNBA',
+          id:     p.id,
+          name:   p.displayName,
+          sub:    p.teamRelationships?.[0]?.displayName || 'WNBA',
+          teamId: p.teamRelationships?.[0]?.core?.id || null,
         }));
       return res.json(results);
+    }
+
+    // ── Next game: find opponent for H2H auto-fill ────────────────────────────
+    if (action === 'nextgame') {
+      if (!teamId) return res.json(null);
+      const [sb, teamMap] = await Promise.all([
+        espnGet('https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard'),
+        fetchTeamMap(),
+      ]);
+      for (const event of sb.events || []) {
+        const comp = event.competitions?.[0];
+        if (!comp) continue;
+        const us  = (comp.competitors || []).find(c => String(c.id) === String(teamId));
+        const opp = (comp.competitors || []).find(c => String(c.id) !== String(teamId));
+        if (us) {
+          return res.json({
+            opp:    teamMap[String(opp?.id)] || '',
+            date:   (comp.date || event.date || '').slice(0, 10),
+            isHome: us.homeAway === 'home',
+          });
+        }
+      }
+      return res.json(null);
     }
 
     // ── Gamelog ───────────────────────────────────────────────────────────────
@@ -105,31 +130,29 @@ export default async function handler(req, res) {
 
       let items;
       if (scope === 'career') {
-        // Career: fetch last 3 prior seasons, swallow missing seasons
         const careerItems = [];
         for (const s of [year - 1, year - 2, year - 3]) {
           try {
-            const si = await fetchEventlogItems(id, s);
-            careerItems.push(...si);
-          } catch { /* season may not exist */ }
+            careerItems.push(...await fetchEventlogItems(id, s));
+          } catch {}
         }
         items = careerItems;
       } else {
-        // Season: single fetch, let errors propagate so frontend sees them
         items = await fetchEventlogItems(id, year);
       }
 
       if (!items.length) return res.json([]);
 
-      // Parallel fetch stats + competition for each game
+      // Fetch team map in parallel with stats/competition
+      const teamMap = await fetchTeamMap();
+
       const games = await Promise.all(items.map(async item => {
         try {
           const [statsData, compInfo] = await Promise.all([
             espnGet(item.statistics.$ref),
-            resolveCompetition(item.competition.$ref, item.teamId),
+            resolveCompetition(item.competition.$ref, item.teamId, teamMap),
           ]);
-          const stats = extractStats(statsData.splits?.categories);
-          return { ...stats, ...compInfo };
+          return { ...extractStats(statsData.splits?.categories), ...compInfo };
         } catch { return null; }
       }));
 
