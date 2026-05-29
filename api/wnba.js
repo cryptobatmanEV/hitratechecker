@@ -65,10 +65,11 @@ async function resolveCompetition(compRef, teamId) {
     const opp = competitors.find(c => String(c.id) !== String(teamId));
     // winner is a boolean field directly on each competitor (no $ref needed)
     const win = us?.winner === true;
+    const _isHome = us?.homeAway === 'home';
     const oppName = WNBA_TEAMS[String(opp?.id)] || '';
-    return { _date: date, _opp: oppName, win };
+    return { _date: date, _opp: oppName, win, _isHome };
   } catch {
-    return { _date: '', _opp: '', win: false };
+    return { _date: '', _opp: '', win: false, _isHome: false };
   }
 }
 
