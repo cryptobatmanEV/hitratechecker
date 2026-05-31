@@ -85,18 +85,27 @@ export default async function handler(req, res) {
   if (sport === 'cs2') {
     out.grid_key = !!process.env.GRID_API_KEY;
     const result = await gp(`
-      query { allSeries(orderBy:STARTTIME_DESC first:10) {
-        nodes { id startTime type
-          games { nodes { teams { nodes { players { nodes { nickname kills } } } } } }
-        }
+      query { allSeries(first:10) {
+        edges { node { id startTime type
+          games { edges { node { teams { edges { node {
+            players { edges { node { nickname kills } } }
+          } } } } } }
+        } }
       }}`);
-    const nodes = result.data?.allSeries?.nodes||[];
+    const rawEdges = result.data?.allSeries?.edges||[];
+    const nodes = rawEdges.map(e=>e.node).filter(Boolean);
     out.series_total = nodes.length;
     out.series_types = [...new Set(nodes.map(n=>n.type))];
     out.esports_series = nodes.filter(n=>n.type==='ESPORTS').length;
     out.sample_players_in_first_esports = nodes.filter(n=>n.type==='ESPORTS').slice(0,2).map(s=>({
       id: s.id,
-      games: s.games?.nodes?.map(g=>g.teams?.nodes?.map(t=>t.players?.nodes?.map(p=>p.nickname))),
+      startTime: s.startTime,
+      games_count: s.games?.edges?.length,
+      players_sample: (s.games?.edges||[]).slice(0,1).flatMap(ge=>
+        (ge.node?.teams?.edges||[]).flatMap(te=>
+          (te.node?.players?.edges||[]).map(pe=>pe.node?.nickname).filter(Boolean)
+        )
+      ),
     }));
     out.errors = result.errors;
   }
