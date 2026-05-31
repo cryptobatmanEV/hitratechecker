@@ -390,6 +390,7 @@ function App(){
   const [trendData,setTrendData]=useState(null);
   const [trendLoad,setTrendLoad]=useState(false);
   const [trendErr,setTrendErr]=useState('');
+  const [trendScope,setTrendScope]=useState(null);
   const [wnbaNextOpp,setWnbaNextOpp]=useState(null);
   const [carStats,setCarSt] =useState(null);
   const [vsP,setVsP]        =useState(null);
@@ -417,12 +418,12 @@ function App(){
   useEffect(()=>{const h=e=>{if(pWrap.current&&!pWrap.current.contains(e.target))setShowPD(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]); 
   useEffect(()=>{
     if(mode!=='trending') return;
-    setTrendData(null);setTrendLoad(true);setTrendErr('');
-    fetch(`/api/trending?sport=${trendSport}`)
+    setTrendData(null);setTrendLoad(true);setTrendErr('');setTrendScope(null);
+    const scopeParam=trendScope?`&scope=${trendScope}`:''; fetch(`/api/trending?sport=${trendSport}${scopeParam}`)
       .then(r=>r.json())
       .then(d=>{setTrendData(d.results||[]);setTrendLoad(false);})
       .catch(e=>{setTrendErr(e.message||'Failed to load trending');setTrendLoad(false);});
-  },[mode,trendSport]);
+  },[mode,trendSport,trendScope]);
 
   const onSelectPlayer=async p=>{
     setPlayer(p);setGameLog([]);setCarLog([]);setError("");setVsP(null);setVsT(null);setHands(null);setDayNt(null);setCarSt(null);setPitcher(null);setPitchQ("");setPInfo(null);setOppTmId(null);setOppTm("");setWnbaNextOpp(null);
@@ -616,6 +617,23 @@ function App(){
             ))}
           </div>
         </div>
+
+        {['lol','dota','cs2'].includes(trendSport)&&<div className="card" style={{paddingBottom:12}}>
+          <div className="label-sm">MAP SCOPE</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+            {(trendSport==='lol'
+              ?[['maps1-3','Maps 1-3'],['maps1-2','Maps 1-2'],['map1','Map 1'],['map2','Map 2'],['map3','Map 3'],['map4','Map 4'],['map5','Map 5']]
+              :trendSport==='dota'
+              ?[['maps1-2','Maps 1-2'],['maps1-3','Maps 1-3'],['map1','Map 1'],['map2','Map 2']]
+              :[['maps1-2','Maps 1-2'],['map1','Map 1'],['map2','Map 2'],['map3','Map 3']]
+            ).map(([val,lbl])=>(
+              <button key={val} className={'sport-btn'+(trendScope===val?' active':'')}
+                style={{flex:'none',minWidth:70}}
+                onClick={()=>setTrendScope(trendScope===val?null:val)}>{lbl}</button>
+            ))}
+          </div>
+          {!trendScope&&<div style={{fontSize:10,color:'rgba(255,255,255,0.3)',marginTop:8}}>Select a scope to match PrizePicks props</div>}
+        </div>}
         {trendLoad&&<div style={{textAlign:'center',padding:20}}><div className="spinner"/><div style={{fontSize:10,color:'rgba(255,255,255,0.3)',marginTop:8}}>Fetching PrizePicks lines + game logs...</div></div>}
         {trendErr&&<div className="error-box">{trendErr}</div>}
         {trendData&&<div className="card">
