@@ -608,7 +608,7 @@ function App(){
         <div className="card">
           <div className="label-sm">TRENDING — SELECT SPORT</div>
           <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
-            {[['nba','NBA'],['wnba','WNBA'],['mlb','MLB'],['nhl','NHL'],['lol','LoL'],['dota','Dota']].map(([k,lbl])=>(
+            {[['nba','NBA'],['wnba','WNBA'],['mlb','MLB'],['nhl','NHL'],['lol','LoL'],['dota','Dota2']].map(([k,lbl])=>(
               <button key={k} className={'sport-btn'+(trendSport===k?' active':'')}
                 style={{flex:'1 0 calc(33% - 4px)'}}
                 onClick={()=>setTrendSport(k)}>{lbl}</button>
