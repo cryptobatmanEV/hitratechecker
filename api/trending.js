@@ -160,12 +160,16 @@ function hitRates(games, fn, line) {
 }
 
 async function fetchPP(leagueId) {
-  const r = await fetch(
-    `https://api.prizepicks.com/projections?league_id=${leagueId}&per_page=250`,
-    { headers:{ Accept:'application/json','User-Agent':UA,'Referer':'https://app.prizepicks.com/' } }
-  );
-  if (!r.ok) throw new Error(`PrizePicks ${r.status}`);
-  return r.json();
+  const url = `https://api.prizepicks.com/projections?league_id=${leagueId}&per_page=250`;
+  const headers = { Accept:'application/json','User-Agent':UA,'Referer':'https://app.prizepicks.com/' };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise(r=>setTimeout(r, 1000 * attempt));
+    const r = await fetch(url, { headers });
+    if (r.status === 429) continue; // retry after delay
+    if (!r.ok) throw new Error(`PrizePicks ${r.status}`);
+    return r.json();
+  }
+  throw new Error('PrizePicks rate limited — try again in a few seconds');
 }
 
 async function findPlayer(name, sport, host) {
@@ -276,10 +280,14 @@ export default async function handler(req, res) {
   try {
     const ppData = await fetchPP(lid);
 
+    // PP uses 'new_player' for most sports but may differ for esports
     const pMap = {};
     for (const inc of ppData.included||[]) {
-      if (inc.type==='new_player') {
-        pMap[inc.id] = { name:inc.attributes?.display_name||inc.attributes?.name, team:inc.attributes?.team };
+      if (inc.type==='new_player' || inc.type==='player' || inc.type==='esports_player') {
+        pMap[inc.id] = {
+          name: inc.attributes?.display_name || inc.attributes?.name || inc.attributes?.nickname,
+          team: inc.attributes?.team || inc.attributes?.team_name,
+        };
       }
     }
 
@@ -292,7 +300,31 @@ export default async function handler(req, res) {
       })
       .filter(p=>p.name&&p.stat&&p.line>0&&calcs[p.stat]);
 
-    if (!projs.length) return res.json({ sport, updated:new Date().toISOString(), results:[], note:'No matching projections today.' });
+    // Debug: what types are in included? Helps find esports player type key
+    const includedTypes = [...new Set((ppData.included||[]).map(i=>i.type))];
+    const rawProjCount = (ppData.data||[]).filter(p=>p.type==='projection').length;
+    const sampleRawProj = (ppData.data||[]).find(p=>p.type==='projection');
+    const sampleIncluded = (ppData.included||[]).slice(0,2);
+
+    if (!projs.length) return res.json({
+      sport, updated:new Date().toISOString(), results:[],
+      debug: {
+        note: 'No projections matched — check included_types and sample_proj below',
+        raw_proj_count: rawProjCount,
+        included_types: includedTypes,
+        pmap_size: Object.keys(pMap).length,
+        sample_proj: sampleRawProj ? {
+          type: sampleRawProj.type,
+          status: sampleRawProj.attributes?.status,
+          stat_type: sampleRawProj.attributes?.stat_type,
+          line: sampleRawProj.attributes?.line_score,
+          player_rel: sampleRawProj.relationships?.new_player?.data,
+          description: sampleRawProj.attributes?.description,
+        } : null,
+        sample_included: sampleIncluded.map(i=>({type:i.type, id:i.id, attrs:i.attributes})),
+        calcs_keys: Object.keys(CALCS[sport]||{}),
+      }
+    });
 
     const seen=new Set(), unique=[];
     for (const p of projs) { if (!seen.has(p.name)&&unique.length<25){ seen.add(p.name); unique.push(p.name); } }
