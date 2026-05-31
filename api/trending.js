@@ -40,10 +40,12 @@ const CALCS = {
     'Shots On Goal':g=>g.stat?.shots,'Saves':g=>g.stat?.saves,
     'Goals Against':g=>g.stat?.goalsAgainst,
   },
+  // LoL: PP uses "MAP N StatName" or "MAPS N-M StatName" — resolved dynamically below
   lol: {
     'Kills':g=>g.kills,'Deaths':g=>g.deaths,'Assists':g=>g.assists,
     'CS':g=>g.cs,'Creep Score':g=>g.cs,'CS (Creep Score)':g=>g.cs,
   },
+  // Dota: same map-range pattern — series totals used as proxy (no per-map data)
   dota: {
     'Kills':g=>g.kills,'Deaths':g=>g.deaths,'Assists':g=>g.assists,
     'GPM':g=>g.gpm,'Gold Per Minute':g=>g.gpm,
@@ -55,6 +57,50 @@ const CALCS = {
   },
 };
 CALCS.wnba = CALCS.nba;
+
+// Dynamically resolve PP stat types that include map prefixes
+// e.g. "MAP 4 Kills" → g.maps[3].kills
+// e.g. "MAPS 1-2 Kills" → g.maps[0].kills + g.maps[1].kills
+// Falls back to series total for Dota (no per-map data in game log)
+const BASE_STAT = {
+  Kills:   (g, maps) => maps ? maps.reduce((s,m)=>s+(m?.kills||0),0)   : (g.kills||0),
+  Deaths:  (g, maps) => maps ? maps.reduce((s,m)=>s+(m?.deaths||0),0)  : (g.deaths||0),
+  Assists: (g, maps) => maps ? maps.reduce((s,m)=>s+(m?.assists||0),0) : (g.assists||0),
+  CS:      (g, maps) => maps ? maps.reduce((s,m)=>s+(m?.cs||0),0)      : (g.cs||0),
+  GPM:     (g)       => g.gpm||0,
+  XPM:     (g)       => g.xpm||0,
+};
+
+function resolveStatFn(sport, statType) {
+  const direct = CALCS[sport]?.[statType];
+  if (direct) return direct;
+
+  // Parse "MAP N StatName" pattern
+  const single = statType.match(/^MAP\s+(\d+)\s+(.+)$/i);
+  if (single) {
+    const idx = parseInt(single[1]) - 1;
+    const base = BASE_STAT[single[2].trim()];
+    if (!base) return null;
+    if (sport === 'lol') return g => base(g, g.maps?.[idx] != null ? [g.maps[idx]] : null);
+    return g => base(g, null); // dota: no per-map, use series total
+  }
+
+  // Parse "MAPS N-M StatName" pattern
+  const range = statType.match(/^MAPS\s+(\d+)-(\d+)\s+(.+)$/i);
+  if (range) {
+    const from = parseInt(range[1]) - 1;
+    const to   = parseInt(range[2]) - 1;
+    const base = BASE_STAT[range[3].trim()];
+    if (!base) return null;
+    if (sport === 'lol') return g => {
+      const maps = g.maps ? g.maps.slice(from, to + 1) : null;
+      return base(g, maps?.length ? maps : null);
+    };
+    return g => base(g, null); // dota: use series total as proxy
+  }
+
+  return null;
+}
 
 // ── GRID helpers (CS2 — free, no ScraperAPI) ──────────────────────────────────
 const GRID_URL = 'https://api.grid.gg/central-data/graphql';
@@ -298,7 +344,7 @@ export default async function handler(req, res) {
         const pl = pMap[pid]||{};
         return { name:pl.name, team:pl.team, stat:p.attributes?.stat_type, line:parseFloat(p.attributes?.line_score)||0 };
       })
-      .filter(p=>p.name&&p.stat&&p.line>0&&calcs[p.stat]);
+      .filter(p=>p.name&&p.stat&&p.line>0&&resolveStatFn(sport,p.stat));
 
     // Debug: what types are in included? Helps find esports player type key
     const includedTypes = [...new Set((ppData.included||[]).map(i=>i.type))];
@@ -347,7 +393,8 @@ export default async function handler(req, res) {
       let games = log;
       if (sport==='mlb') games = PITCHING_STATS.has(proj.stat) ? log.pitching : log.hitting;
       if (!Array.isArray(games)||!games.length) continue;
-      const r = hitRates(games, calcs[proj.stat], proj.line);
+      const statFn = resolveStatFn(sport, proj.stat); if (!statFn) continue;
+      const r = hitRates(games, statFn, proj.line);
       if (!r?.l10) continue;
       results.push({ player:proj.name, team:proj.team, stat:proj.stat, line:proj.line, l5:r.l5, l10:r.l10, l30:r.l30 });
     }
