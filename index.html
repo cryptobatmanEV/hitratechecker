@@ -83,6 +83,7 @@ const {useState,useEffect,useRef}=React;
 // ── Stat lists ────────────────────────────────────────────────────────────────
 const HIT_STATS=[
   {label:"Hits",calc:s=>s.hits},
+  {label:"Singles",calc:s=>{const sg=(s.hits||0)-(s.doubles||0)-(s.triples||0)-(s.homeRuns||0);return sg>=0?sg:null;}},
   {label:"Total Bases",calc:s=>{const sg=(s.hits||0)-(s.doubles||0)-(s.triples||0)-(s.homeRuns||0);return sg+2*(s.doubles||0)+3*(s.triples||0)+4*(s.homeRuns||0);}},
   {label:"Home Runs",calc:s=>s.homeRuns},
   {label:"RBIs",calc:s=>s.rbi},
@@ -278,7 +279,7 @@ async function searchRiot(q,game){const r=await fetch(`/api/riot?action=search&g
 async function getRiotLog(game,puuid,routing,platform,scope){const params=`action=gamelog&game=${game}&puuid=${encodeURIComponent(puuid)}&routing=${routing}&platform=${platform||'na'}&scope=${scope}`;const r=await fetch(`/api/riot?${params}`);const d=await r.json();if(d.error)throw new Error(d.error);return d.games||[];}
 
 // ── Calc ──────────────────────────────────────────────────────────────────────
-function hitRate(games,fn,line,ou){const vals=games.map(fn).filter(v=>v!=null&&!isNaN(v));if(!vals.length)return null;const hits=vals.filter(v=>ou==="over"?v>line:v<line).length;return{rate:Math.round(hits/vals.length*100),hits,total:vals.length,avg:Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10)/10};}
+  function hitRate(games,fn,line,ou){const vals=games.map(fn).filter(v=>v!=null&&!isNaN(v));if(!vals.length)return null;const hits=vals.filter(v=>ou==="over"?v>line:v<line).length;return{rate:Math.round(hits/vals.length*100),hits,total:vals.length,avg:Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10)/10};}
 function calcStreak(games,fn,line,ou){let s=0;for(const g of games){const v=fn(g);if(v==null||isNaN(v))break;if(ou==="over"?v>line:v<line)s++;else break;}return s;}
 function rateColor(r){return r>=65?"#00dc6e":r>=50?"#ffc800":"#ff6b6b";}
 function rateCls(r){return r>=65?"rate-hot":r>=50?"rate-mid":"rate-cold";}
@@ -384,6 +385,11 @@ function App(){
   const [gameLog,setGameLog]=useState([]);
   const [carLog,setCarLog]  =useState([]);
   const [logPage,setLogPage]=useState(0);
+  const [mode,setMode]=useState('check');
+  const [trendSport,setTrendSport]=useState('nba');
+  const [trendData,setTrendData]=useState(null);
+  const [trendLoad,setTrendLoad]=useState(false);
+  const [trendErr,setTrendErr]=useState('');
   const [wnbaNextOpp,setWnbaNextOpp]=useState(null);
   const [carStats,setCarSt] =useState(null);
   const [vsP,setVsP]        =useState(null);
@@ -408,7 +414,15 @@ function App(){
   const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setH2hIn("");setH2hAct("");setOppTmId(null);setOppTm("");setLogPage(0);setWnbaNextOpp(null);};
   useEffect(()=>{clearAll();setMapScope("total");},[sport,mlbGrp,esGame]);
   useEffect(()=>{if(isMLB){setGLoad(true);getTodayGames().then(g=>setToday(g)).catch(()=>{}).finally(()=>setGLoad(false));}},[sport]);
-  useEffect(()=>{const h=e=>{if(pWrap.current&&!pWrap.current.contains(e.target))setShowPD(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]);
+  useEffect(()=>{const h=e=>{if(pWrap.current&&!pWrap.current.contains(e.target))setShowPD(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]); 
+  useEffect(()=>{
+    if(mode!=='trending') return;
+    setTrendData(null);setTrendLoad(true);setTrendErr('');
+    fetch(`/api/trending?sport=${trendSport}`)
+      .then(r=>r.json())
+      .then(d=>{setTrendData(d.results||[]);setTrendLoad(false);})
+      .catch(e=>{setTrendErr(e.message||'Failed to load trending');setTrendLoad(false);});
+  },[mode,trendSport]);
 
   const onSelectPlayer=async p=>{
     setPlayer(p);setGameLog([]);setCarLog([]);setError("");setVsP(null);setVsT(null);setHands(null);setDayNt(null);setCarSt(null);setPitcher(null);setPitchQ("");setPInfo(null);setOppTmId(null);setOppTm("");setWnbaNextOpp(null);
@@ -586,7 +600,54 @@ function App(){
       </div>
 
       {/* Sport */}
-      <div className="card"><div className="label-sm">SPORT</div><div style={{display:"flex"}}><button className={"sport-btn"+(sport==="MLB"?" active":"")} onClick={()=>setSport("MLB")}>MLB</button><button className={"sport-btn"+(sport==="NHL"?" active":"")} onClick={()=>setSport("NHL")}>NHL</button><button className={"sport-btn"+(sport==="WNBA"?" active":"")} onClick={()=>setSport("WNBA")}>WNBA</button><button className={"sport-btn"+(sport==="NBA"?" active":"")} onClick={()=>setSport("NBA")}>NBA</button><button className={"sport-btn"+(sport==="ESPORTS"?" active":"")} onClick={()=>setSport("ESPORTS")}>ESPORTS</button></div></div>
+      <div className="card"><div className="label-sm">SPORT</div><div style={{display:"flex"}}><button className={"sport-btn"+(mode==="trending"?" active":"")} style={{background:mode==="trending"?"rgba(255,200,0,0.15)":"transparent",borderColor:mode==="trending"?"#ffc800":"rgba(255,255,255,0.1)",color:mode==="trending"?"#ffc800":"rgba(255,255,255,0.4)"}} onClick={()=>setMode(mode==="trending"?"check":"trending")}>📈 TRENDING</button>
+          <button className={"sport-btn"+(sport==="MLB"?" active":"")} onClick={()=>{setMode("check");setSport("MLB");}}>MLB</button><button className={"sport-btn"+(sport==="NHL"?" active":"")} onClick={()=>setSport("NHL")}>NHL</button><button className={"sport-btn"+(sport==="WNBA"?" active":"")} onClick={()=>setSport("WNBA")}>WNBA</button><button className={"sport-btn"+(sport==="NBA"?" active":"")} onClick={()=>setSport("NBA")}>NBA</button><button className={"sport-btn"+(sport==="ESPORTS"?" active":"")} onClick={()=>setSport("ESPORTS")}>ESPORTS</button></div></div>
+
+      {/* ─── TRENDING VIEW ──────────────────────────────────────────────────── */}
+      {mode==='trending'&&<div>
+        <div className="card">
+          <div className="label-sm">TRENDING — SELECT SPORT</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+            {[['nba','NBA'],['wnba','WNBA'],['mlb','MLB'],['nhl','NHL'],['lol','LoL'],['dota','Dota']].map(([k,lbl])=>(
+              <button key={k} className={'sport-btn'+(trendSport===k?' active':'')}
+                style={{flex:'1 0 calc(33% - 4px)'}}
+                onClick={()=>setTrendSport(k)}>{lbl}</button>
+            ))}
+          </div>
+        </div>
+        {trendLoad&&<div style={{textAlign:'center',padding:20}}><div className="spinner"/><div style={{fontSize:10,color:'rgba(255,255,255,0.3)',marginTop:8}}>Fetching PrizePicks lines + game logs...</div></div>}
+        {trendErr&&<div className="error-box">{trendErr}</div>}
+        {trendData&&<div className="card">
+          <div className="sec-title" style={{marginBottom:12}}>🔥 {trendSport.toUpperCase()} — Top Trending Props · Sorted by L10%</div>
+          {trendData.length===0&&<div style={{color:'rgba(255,255,255,0.3)',fontSize:11}}>No trending props found for today. Try another sport.</div>}
+          {trendData.map((item,i)=>{
+            const l10c=item.l10?.pct>=70?'#00dc6e':item.l10?.pct>=50?'#ffc800':'#ff4d4d';
+            const l5c=item.l5?.pct>=70?'#00dc6e':item.l5?.pct>=50?'#ffc800':'#ff4d4d';
+            const l30c=item.l30?.pct>=70?'#00dc6e':item.l30?.pct>=50?'#ffc800':'#ff4d4d';
+            return(<div key={i} style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
+                <div>
+                  <span style={{fontSize:12,fontWeight:700}}>{item.player}</span>
+                  {item.team&&<span style={{fontSize:10,color:'rgba(255,255,255,0.35)',marginLeft:6}}>{item.team}</span>}
+                </div>
+                <div style={{textAlign:'right',fontSize:11}}>
+                  <span style={{color:'rgba(255,255,255,0.5)'}}>{item.stat}</span>
+                  <span style={{color:'#00dc6e',marginLeft:6,fontWeight:700}}>O {item.line}</span>
+                </div>
+              </div>
+              <div style={{display:'flex',gap:16,fontSize:10}}>
+                {item.l5&&<span style={{color:'rgba(255,255,255,0.4)'}}>L5: <b style={{color:l5c}}>{item.l5.pct}%</b> <span style={{color:'rgba(255,255,255,0.25)'}}>avg {item.l5.avg}</span></span>}
+                {item.l10&&<span style={{color:'rgba(255,255,255,0.4)'}}>L10: <b style={{color:l10c}}>{item.l10.pct}%</b> <span style={{color:'rgba(255,255,255,0.25)'}}>avg {item.l10.avg}</span></span>}
+                {item.l30&&<span style={{color:'rgba(255,255,255,0.4)'}}>L30: <b style={{color:l30c}}>{item.l30.pct}%</b> <span style={{color:'rgba(255,255,255,0.25)'}}>avg {item.l30.avg}</span></span>}
+              </div>
+            </div>);
+          })}
+          {trendData.length>0&&<div style={{fontSize:9,color:'rgba(255,255,255,0.2)',marginTop:12}}>Lines pulled from PrizePicks · Updated every 5 min · Hit rate vs actual PP line</div>}
+        </div>}
+      </div>}
+
+      {/* ─── CHECK MODE UI ───────────────────────────────────────────────────── */}
+      {mode==='check'&&<div>
 
       {/* MLB type */}
       {isMLB&&<div className="card"><div className="label-sm">PLAYER TYPE</div><div style={{display:"flex"}}><button className={"sport-btn"+(mlbGrp==="hitting"?" active":"")} onClick={()=>setMlbGrp("hitting")}>BATTER</button><button className={"sport-btn"+(mlbGrp==="pitching"?" active":"")} onClick={()=>setMlbGrp("pitching")}>PITCHER</button></div></div>}
@@ -756,9 +817,17 @@ function App(){
       </>)}
 
       <div style={{marginTop:12,textAlign:"center",fontSize:10,color:"rgba(255,255,255,0.12)",letterSpacing:"1px",paddingBottom:24}}>THE +EV CAVE · PAID MEMBER TOOL · NOT FINANCIAL ADVICE</div>
+    </div>}{/* end check mode */}
     </div></div>
   );
 }
+
+function TrendColor({pct}){
+  if(pct==null) return <span style={{color:'rgba(255,255,255,0.3)'}}>—</span>;
+  const c=pct>=70?'#00dc6e':pct>=50?'#ffc800':'#ff4d4d';
+  return <b style={{color:c}}>{pct}%</b>;
+}
+
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
