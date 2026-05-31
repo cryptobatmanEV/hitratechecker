@@ -85,8 +85,8 @@ function resolveStatFn(sport, statType) {
     const idx = parseInt(single[1]) - 1;
     const base = BASE_STAT[single[2].trim()];
     if (!base) return null;
-    if (sport === 'lol') return g => {
-      // Return null if this map wasn't played — excludes the game from hit rate calc
+    if (sport === 'lol' || sport === 'cs2') return g => {
+      // Return null if this map wasn't played
       if (!g.maps || g.maps.length <= idx) return null;
       return base(g, [g.maps[idx]]);
     };
@@ -101,7 +101,7 @@ function resolveStatFn(sport, statType) {
     const mapsNeeded = to - from + 1;
     const base    = BASE_STAT[range[3].trim()];
     if (!base) return null;
-    if (sport === 'lol') return g => {
+    if (sport === 'lol' || sport === 'cs2') return g => {
       // Only count games where enough maps were actually played
       if (!g.maps || g.maps.length < mapsNeeded) return null;
       const maps = g.maps.slice(from, to + 1);
