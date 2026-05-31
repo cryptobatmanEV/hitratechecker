@@ -131,82 +131,55 @@ async function gridPost(query, variables) {
   return d.data;
 }
 
-async function findCS2Player(name) {
-  const n = norm(name);
-  // GRID schema uses `players` (not allPlayers) with edges/node pattern
-  for (const filterVal of [name, `%${name}%`]) {
-    for (const op of ['eq','equalTo','like','ilike']) {
-      try {
-        const data = await gridPost(`
-          query SearchPlayer($val: String!) {
-            players(filter:{nickname:{${op}:$val}} first:8) {
-              edges { node { id nickname } }
-            }
-          }
-        `, { val: filterVal });
-        const list=(data?.players?.edges||[]).map(e=>e.node).filter(Boolean);
-        if(list.length) return list.find(p=>norm(p.nickname)===n)||list[0]||null;
-      } catch {}
-    }
-  }
-  return null;
-}
-
-async function getCS2KillLog(playerId) {
-  // Fetch recent series, sum kills per series (matches PP's per-match prop)
+// CS2: batch extract all player kills from recent allSeries (no allPlayers needed)
+async function fetchCS2BatchLogs(ppPlayerNames) {
+  // One GRID query gets all recent esports series with player kills
   const data = await gridPost(`
-    query PlayerSeries($pid: Long!) {
+    query RecentSeries {
       allSeries(
-        filter: {
-          hasRosterWithPlayers: { playerId: { equalTo: $pid } }
-          type: { equalTo: ESPORTS }
-        }
+        filter: { type: { equalTo: ESPORTS } }
         orderBy: STARTTIME_DESC
-        first: 30
+        first: 60
       ) {
         nodes {
-          id
-          startTime
-          games {
-            nodes {
-              teams {
-                nodes {
-                  homeTeam
-                  name
-                  players {
-                    nodes { playerId kills }
-                  }
-                }
-              }
-            }
-          }
+          id startTime
+          games { nodes {
+            teams { nodes {
+              players { nodes { playerId nickname kills } }
+            }}
+          }}
         }
       }
     }
-  `, { pid: parseInt(playerId) });
+  `, {});
 
-  const series = data?.allSeries?.nodes || [];
-  // allSeries is confirmed working in cs2.js — only allPlayers was wrong
-  const games = [];
-
-  for (const s of series) {
-    let totalKills = 0, found = false;
-    for (const ge of (s.games?.edges || [])) {
-      const g = ge.node;
-      for (const te of (g?.teams?.edges || [])) {
-        const t = te.node;
-        for (const pe of (t?.players?.edges || [])) {
-          const p = pe.node;
-          if (String(p?.playerId) === String(playerId)) {
-            totalKills += p.kills || 0;
-            found = true;
-          }
+  // Build: normalized nickname → [{kills, _date}]
+  const logsByNick = {};
+  for (const s of data?.allSeries?.nodes || []) {
+    const date = (s.startTime||'').slice(0,10);
+    const seriesKills = {}; // nick → total kills this series
+    for (const g of s.games?.nodes||[]) {
+      for (const t of g.teams?.nodes||[]) {
+        for (const p of t.players?.nodes||[]) {
+          if (!p.nickname) continue;
+          seriesKills[p.nickname] = (seriesKills[p.nickname]||0)+(p.kills||0);
         }
       }
     }
-    if (found) games.push({ kills: totalKills, _date: (s.startTime||'').slice(0,10) });
+    for (const [nick, kills] of Object.entries(seriesKills)) {
+      const n = norm(nick);
+      if (!logsByNick[n]) logsByNick[n] = [];
+      logsByNick[n].push({ kills, _date: date });
+    }
   }
-  return games;
+
+  // Match PP player names to extracted logs
+  const result = {};
+  for (const name of ppPlayerNames) {
+    const n = norm(name);
+    result[name] = logsByNick[n] || [];
+  }
+  return result;
 }
 
 // ── Generic helpers ────────────────────────────────────────────────────────────
@@ -214,7 +187,7 @@ function norm(n) {
   return (n||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,'').trim();
 }
 
-function hitRates(games, fn, line) {
+function hitRates(games, fn, line, allowOver=true, allowUnder=true) {
   const vals = games.map(g=>{try{const v=fn(g);return(v!=null&&!isNaN(v)&&v>=0)?v:null;}catch{return null;}}).filter(v=>v!=null);
   if (!vals.length) return null;
   const calc = (n, dir) => {
@@ -222,10 +195,16 @@ function hitRates(games, fn, line) {
     const h = dir==='over' ? s.filter(v=>v>line).length : s.filter(v=>v<line).length;
     return { hits:h, total:s.length, pct:Math.round(h/s.length*100), avg:Math.round(s.reduce((a,b)=>a+b,0)/s.length*10)/10 };
   };
-  // Pick whichever direction has better L10 hit rate
-  const overL10 = calc(10,'over');
-  const underL10 = calc(10,'under');
-  const dir = (overL10?.pct||0) >= (underL10?.pct||0) ? 'over' : 'under';
+  // Respect PP prop type: demon=over only, goblin=under only, standard=best of both
+  let dir;
+  if (!allowOver && !allowUnder) return null;
+  if (!allowOver) dir = 'under';
+  else if (!allowUnder) dir = 'over';
+  else {
+    const overL10 = calc(10,'over');
+    const underL10 = calc(10,'under');
+    dir = (overL10?.pct||0) >= (underL10?.pct||0) ? 'over' : 'under';
+  }
   return { direction:dir, l5:calc(5,dir), l10:calc(10,dir), l30:calc(30,dir) };
 }
 
@@ -251,10 +230,11 @@ async function findPlayer(name, sport, host) {
     }
     if (sport === 'lol') {
       const r = await fetch(`https://${host}/api/lol?action=search&name=${encodeURIComponent(name)}`);
-      if (!r.ok) return null; // lol.js throws 500 when player not found — skip gracefully
+      if (!r.ok) return null;
       const d = await r.json();
       const list = Array.isArray(d) ? d : (d.players||[]);
-      return list.find(p=>norm(p.name)===n) || list[0] || null;
+      // Require exact norm match — no fallback to list[0] (wrong player is worse than no player)
+      return list.find(p=>norm(p.name)===n) || null;
     }
     if (sport === 'dota') {
       const r = await fetch(`https://${host}/api/dota?action=search&q=${encodeURIComponent(name)}`);
@@ -410,13 +390,17 @@ export default async function handler(req, res) {
     const ppData = await fetchPP(lid);
 
     // PP uses 'new_player' for most sports but may differ for esports
-    const pMap = {};
+    const pMap = {}, projTypeMap = {};
     for (const inc of ppData.included||[]) {
-      if (inc.type==='new_player' || inc.type==='player' || inc.type==='esports_player') {
+      if (inc.type==='new_player'||inc.type==='player'||inc.type==='esports_player') {
         pMap[inc.id] = {
-          name: inc.attributes?.display_name || inc.attributes?.name || inc.attributes?.nickname,
-          team: inc.attributes?.team || inc.attributes?.team_name,
+          name: inc.attributes?.display_name||inc.attributes?.name||inc.attributes?.nickname,
+          team: inc.attributes?.team||inc.attributes?.team_name,
         };
+      }
+      if (inc.type==='projection_type') {
+        const n=(inc.attributes?.name||inc.attributes?.type_name||'').toLowerCase();
+        projTypeMap[inc.id]={ allowOver:!n.includes('goblin'), allowUnder:!n.includes('demon') };
       }
     }
 
@@ -426,6 +410,11 @@ export default async function handler(req, res) {
         const pid = p.relationships?.new_player?.data?.id;
         const pl = pMap[pid]||{};
         return { name:pl.name, team:pl.team, stat:p.attributes?.stat_type, line:parseFloat(p.attributes?.line_score)||0 };
+      })
+      .map(p => {
+        const ptId = p.relationships?.projection_type?.data?.id;
+        const pt = projTypeMap[ptId] || { allowOver:true, allowUnder:true };
+        return { ...p, allowOver:pt.allowOver, allowUnder:pt.allowUnder };
       })
       .filter(p=>p.name&&p.stat&&p.line>0&&resolveStatFn(sport,p.stat));
 
@@ -459,15 +448,24 @@ export default async function handler(req, res) {
     for (const p of projs) { if (!seen.has(p.name)&&unique.length<25){ seen.add(p.name); unique.push(p.name); } }
 
     const playerObjs = {};
-    await Promise.all(unique.map(async name => {
-      const p = await findPlayer(name, sport, host).catch(()=>null);
-      if (p) playerObjs[name] = p;
-    }));
-
     const logMap = {};
-    await Promise.all(Object.entries(playerObjs).map(async ([name,p]) => {
-      logMap[name] = await fetchLog(p, sport, host).catch(()=>sport==='mlb'?{hitting:[],pitching:[]}:[]);
-    }));
+
+    if (sport === 'cs2') {
+      // CS2: batch extract from allSeries — no per-player search needed
+      const batchLogs = await fetchCS2BatchLogs(unique).catch(()=>({}));
+      for (const name of unique) {
+        const log = batchLogs[name] || [];
+        if (log.length) { playerObjs[name]={id:name,name}; logMap[name]=log; }
+      }
+    } else {
+      await Promise.all(unique.map(async name => {
+        const p = await findPlayer(name, sport, host).catch(()=>null);
+        if (p) playerObjs[name] = p;
+      }));
+      await Promise.all(Object.entries(playerObjs).map(async ([name,p]) => {
+        logMap[name] = await fetchLog(p, sport, host).catch(()=>sport==='mlb'?{hitting:[],pitching:[]}:[]);
+      }));
+    }
 
     const results = [];
     for (const proj of projs) {
@@ -477,7 +475,7 @@ export default async function handler(req, res) {
       if (sport==='mlb') games = PITCHING_STATS.has(proj.stat) ? log.pitching : log.hitting;
       if (!Array.isArray(games)||!games.length) continue;
       const statFn = resolveStatFn(sport, proj.stat); if (!statFn) continue;
-      const r = hitRates(games, statFn, proj.line);
+      const r = hitRates(games, statFn, proj.line, proj.allowOver, proj.allowUnder);
       if (!r?.l10) continue;
       results.push({ player:proj.name, team:proj.team, stat:proj.stat, line:proj.line, direction:r.direction, l5:r.l5, l10:r.l10, l30:r.l30 });
     }
