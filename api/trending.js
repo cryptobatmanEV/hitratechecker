@@ -136,32 +136,33 @@ async function fetchCS2BatchLogs(ppPlayerNames) {
   // One GRID query gets all recent esports series with player kills
   const data = await gridPost(`
     query RecentSeries {
-      allSeries(
-        orderBy: STARTTIME_DESC
-        first: 200
-      ) {
-        nodes {
+      allSeries(first: 200) {
+        edges { node {
           id startTime type
-          games { nodes {
-            teams { nodes {
-              players { nodes { playerId nickname kills } }
-            }}
-          }}
-        }
+          games { edges { node {
+            teams { edges { node {
+              players { edges { node { playerId nickname kills } } }
+            } } }
+          } } }
+        } }
       }
     }
   `, {});
 
   // Build: normalized nickname → [{kills, _date}]
   const logsByNick = {};
-  // Filter ESPORTS type client-side — server-side enum filter syntax was wrong
-  for (const s of (data?.allSeries?.nodes||[]).filter(s=>s?.type==='ESPORTS')) {
+  // Filter ESPORTS type client-side, extract from edges.node structure
+  const allNodes = (data?.allSeries?.edges||[]).map(e=>e.node).filter(Boolean);
+  for (const s of allNodes.filter(s=>s?.type==='ESPORTS')) {
     const date = (s.startTime||'').slice(0,10);
     const seriesKills = {}; // nick → total kills this series
-    for (const g of s.games?.nodes||[]) {
-      for (const t of g.teams?.nodes||[]) {
-        for (const p of t.players?.nodes||[]) {
-          if (!p.nickname) continue;
+    for (const ge of s.games?.edges||[]) {
+      const g = ge.node;
+      for (const te of g?.teams?.edges||[]) {
+        const t = te.node;
+        for (const pe of t?.players?.edges||[]) {
+          const p = pe.node;
+          if (!p?.nickname) continue;
           seriesKills[p.nickname] = (seriesKills[p.nickname]||0)+(p.kills||0);
         }
       }
