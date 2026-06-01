@@ -413,14 +413,6 @@ async function fetchLog(player, sport, host) {
     }
     if (sport === 'nfl' || sport === 'cfb') {
       const endpoint = sport === 'nfl' ? 'nfl' : 'cfb';
-      const r = await fetch(`https://${host}/api/${endpoint}?action=search&q=${encodeURIComponent(name)}`);
-      if (!r.ok) return null;
-      const d = await r.json();
-      const list = Array.isArray(d) ? d : [];
-      return list.find(p=>norm(p.name)===n) || list[0] || null;
-    }
-    if (sport === 'nfl' || sport === 'cfb') {
-      const endpoint = sport === 'nfl' ? 'nfl' : 'cfb';
       const r = await fetch(`https://${host}/api/${endpoint}?action=gamelog&id=${encodeURIComponent(player.id||'')}`);
       if (!r.ok) return [];
       const d = await r.json();
