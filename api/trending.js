@@ -622,9 +622,18 @@ export default async function handler(req, res) {
     }));
     const timeoutMs = (sport==='nfl'||sport==='cfb') ? 15000 : 7000; // NFL/CFB gamelogs need more time
     const fetchWithTimeout = (p,ms=timeoutMs) => Promise.race([p, new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),ms))]);
-    await Promise.all(Object.entries(playerObjs).map(async ([name,p]) => {
+    const fetchOneLog = async ([name,p]) => {
       logMap[name] = await fetchWithTimeout(fetchLog(p,sport,host)).catch(()=>sport==='mlb'?{hitting:[],pitching:[]}:[]);
-    }));
+    };
+    const entries = Object.entries(playerObjs);
+    if (sport==='nfl'||sport==='cfb') {
+      // Batch 5 at a time — 25 parallel NFL calls = 1000+ ESPN requests = rate limited
+      for (let i=0; i<entries.length; i+=5) {
+        await Promise.all(entries.slice(i,i+5).map(fetchOneLog));
+      }
+    } else {
+      await Promise.all(entries.map(fetchOneLog));
+    }
 
     const results = [];
     for (const proj of projs) {
