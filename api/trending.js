@@ -3,7 +3,7 @@ export const config = { maxDuration: 30 };
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
 // Main leagues only — no SZN/series/splits
-const PP_LEAGUE = { nba:'7', wnba:'3', nfl:'9', cfb:'286', mlb:'2', nhl:'8', lol:'121', dota:'174', cs2:'265' };
+const PP_LEAGUE = { nba:'7', wnba:'3', nfl:'9', cfb:'15', mlb:'2', nhl:'8', lol:'121', dota:'174', cs2:'265' };
 
 const PITCHING_STATS = new Set([
   'Pitcher Strikeouts','Pitching Outs','Hits Allowed','Earned Runs Allowed','Walks Allowed'
@@ -47,6 +47,8 @@ const CALCS = {
     'Targets':g=>g.tgt||0, 'Kicking Points':g=>(g.fgm||0)*3+(g.xpm||0),
     'Field Goals Made':g=>g.fgm||0,
     'Fantasy Score':g=>(g.passYds||0)*0.04+(g.passTDs||0)*4+(g.rushYds||0)*0.1+(g.rushTDs||0)*6+(g.recYds||0)*0.1+(g.rec||0)+(g.passInt||0)*(-1),
+    'Rush+Rec TDs':g=>(g.rushTDs||0)+(g.recTDs||0),
+    'Rush+Rec Yards':g=>(g.rushYds||0)+(g.recYds||0),
   },
   cfb: {
     'Pass Yards':g=>g.passYds||0, 'Rush Yards':g=>g.rushYds||0,
@@ -618,7 +620,8 @@ export default async function handler(req, res) {
       const p = await findPlayer(name, sport, host).catch(()=>null);
       if (p) playerObjs[name] = p;
     }));
-    const fetchWithTimeout = (p,ms=7000) => Promise.race([p, new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),ms))]);
+    const timeoutMs = (sport==='nfl'||sport==='cfb') ? 15000 : 7000; // NFL/CFB gamelogs need more time
+    const fetchWithTimeout = (p,ms=timeoutMs) => Promise.race([p, new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),ms))]);
     await Promise.all(Object.entries(playerObjs).map(async ([name,p]) => {
       logMap[name] = await fetchWithTimeout(fetchLog(p,sport,host)).catch(()=>sport==='mlb'?{hitting:[],pitching:[]}:[]);
     }));
