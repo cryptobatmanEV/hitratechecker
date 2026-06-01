@@ -1,58 +1,61 @@
 export const config = { maxDuration: 30 };
-const UA = 'Mozilla/5.0';
-const PP_HDRS = {Accept:'application/json','User-Agent':UA,'Referer':'https://app.prizepicks.com/'};
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+
+async function get(url) {
+  const r = await fetch(url, { headers:{'User-Agent':UA} });
+  return { status: r.status, ok: r.ok, data: r.ok ? await r.json().catch(()=>null) : null };
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
-  const host = req.headers.host;
   const out = {};
 
-  // Step 1: get a missing player ID from LoL
-  const r = await fetch('https://api.prizepicks.com/projections?league_id=121&per_page=250', {headers:PP_HDRS});
-  const d = await r.json();
-  const pMap = {};
-  for (const i of d.included||[]) {
-    if (i.type==='new_player') pMap[i.id]={name:i.attributes?.display_name||i.attributes?.name,combo:i.attributes?.combo===true};
-  }
-  const projs = (d.data||[]).filter(p=>p.type==='projection');
-  const missingIds = [...new Set(projs.map(p=>p.relationships?.new_player?.data?.id).filter(id=>id&&!pMap[id]))];
-  out.pmap_size = Object.keys(pMap).length;
-  out.missing_count = missingIds.length;
-  out.missing_sample = missingIds.slice(0,3);
+  // Step 1: get Drake Maye's ESPN ID
+  const search = await get('https://site.api.espn.com/apis/common/v3/search?query=Drake+Maye&limit=5&type=player&sport=football&league=nfl');
+  const maye = (search.data?.items||[]).find(p=>p.displayName?.includes('Maye'));
+  out.player = maye ? { id:maye.id, name:maye.displayName } : null;
+  if (!maye) return res.json({error:'Drake Maye not found', search_result:search.data?.items?.slice(0,3)});
 
-  // Step 2: test the new_players endpoint for a missing ID
-  if (missingIds[0]) {
-    const tid = missingIds[0];
-    const pr = await fetch(`https://api.prizepicks.com/new_players/${tid}`, {headers:PP_HDRS});
-    const pd = await pr.json().catch(e=>({error:e.message}));
-    out.new_players_endpoint = {
-      id: tid,
-      status: pr.status,
-      ok: pr.ok,
-      response_keys: Object.keys(pd),
-      data_type: pd.data?.type,
-      attrs: pd.data?.attributes ? {name:pd.data.attributes.display_name||pd.data.attributes.name, combo:pd.data.attributes.combo} : null,
-      errors: pd.errors?.slice(0,2),
-    };
-  }
+  const id = maye.id;
+  const season = 2025;
+  const BASE = `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl`;
 
-  // Step 3: check the pMap entries we DO have — are any combo:false?
-  const pMapValues = Object.values(pMap);
-  out.pmap_combo_false = pMapValues.filter(p=>!p.combo).length;
-  out.pmap_combo_true = pMapValues.filter(p=>p.combo).length;
-  out.pmap_sample_noncombo = pMapValues.filter(p=>!p.combo).slice(0,3).map(p=>p.name);
+  // Step 2: try multiple URL patterns and show what each returns
+  const tests = [
+    // Generic eventlog (working)
+    `${BASE}/seasons/${season}/athletes/${id}/eventlog?limit=50`,
+    // Typed paths
+    `${BASE}/seasons/${season}/types/2/athletes/${id}/eventlog?limit=50`,
+    `${BASE}/seasons/${season}/types/3/athletes/${id}/eventlog?limit=50`,
+    // Query param variations
+    `${BASE}/seasons/${season}/athletes/${id}/eventlog?limit=50&seasontype=3`,
+    `${BASE}/seasons/${season}/athletes/${id}/eventlog?limit=50&type=3`,
+    `${BASE}/seasons/${season}/athletes/${id}/eventlog?limit=50&postseason=true`,
+    // Direct athlete events
+    `${BASE}/athletes/${id}/eventlog?season=${season}&limit=50`,
+  ];
 
-  // Step 4: check how many projs have a player in pMap and are non-combo
-  let matched=0, nameOk=0, notCombo=0, resolvOk=0;
-  for (const p of projs) {
-    const pid = p.relationships?.new_player?.data?.id;
-    const pl = pMap[pid]||{};
-    if (pl.name) nameOk++;
-    if (pl.name && p.attributes?.event_type!=='combo') notCombo++;
-    // rough check
-    matched++;
+  out.url_tests = {};
+  for (const url of tests) {
+    const label = url.replace(BASE,'').replace(String(id),'PLAYER_ID');
+    try {
+      const r = await get(url);
+      const items = r.data?.events?.items || [];
+      out.url_tests[label] = {
+        status: r.status,
+        item_count: items.length,
+        played_count: items.filter(i=>i.played).length,
+        // Show seasonType of each played item
+        game_season_types: items.filter(i=>i.played).map(i=>i.seasonType?.id||i.seasonType?.type||typeof i.seasonType),
+        // Show what fields are on the first item
+        first_item_keys: items[0] ? Object.keys(items[0]) : [],
+        // Show first item's seasonType raw
+        first_seasonType: items[0]?.seasonType,
+      };
+    } catch(e) {
+      out.url_tests[label] = { error: e.message };
+    }
   }
-  out.filter_check = {total:projs.length, has_name:nameOk, name_and_not_combo:notCombo};
 
   return res.json(out);
 }
