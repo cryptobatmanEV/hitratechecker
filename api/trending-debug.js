@@ -7,7 +7,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
   const host = req.headers.host;
 
-  // Replicate trending.js flow exactly for NFL, 3 players only
+  // Simulate ALL 25 parallel calls exactly like trending.js does
   const pp = await fetch('https://api.prizepicks.com/projections?league_id=9&per_page=250',{headers:H});
   const pd = await pp.json();
   const pMap = {};
@@ -16,34 +16,35 @@ export default async function handler(req, res) {
     const pid=p.relationships?.new_player?.data?.id;
     return { name:pMap[pid]?.name, stat:p.attributes?.stat_type, line:parseFloat(p.attributes?.line_score)||0 };
   }).filter(p=>p.name&&p.stat&&p.line>0);
+  const seen=new Set(), unique=[];
+  for(const p of projs){ if(!seen.has(p.name)&&unique.length<25){seen.add(p.name);unique.push(p.name);}}
 
-  // Get 3 unique players
-  const seen=new Set(), players=[];
-  for(const p of projs){ if(!seen.has(p.name)&&players.length<3){seen.add(p.name);players.push(p.name);}}
-
-  const results = {};
-  for (const name of players) {
+  // Step 1: findPlayer for all 25 in parallel
+  const playerObjs = {};
+  await Promise.all(unique.map(async name => {
     const n = norm(name);
-    // Step 1: findPlayer
     const sr = await fetch(`https://${host}/api/nfl?action=search&q=${encodeURIComponent(name)}`);
     const sd = await sr.json().catch(()=>[]);
     const list = Array.isArray(sd)?sd:[];
-    const player = list.find(p=>norm(p.name)===n)||list[0]||null;
+    const p = list.find(p=>norm(p.name)===n)||list[0]||null;
+    if(p) playerObjs[name]=p;
+  }));
 
-    // Step 2: fetchLog with id
-    let games = [];
-    let logError = null;
-    if (player?.id) {
-      const t = Date.now();
-      try {
-        const gr = await fetch(`https://${host}/api/nfl?action=gamelog&id=${encodeURIComponent(player.id)}`);
-        const gd = await gr.json();
-        games = Array.isArray(gd)?gd:[];
-        results[name] = { player_id: player.id, player_name: player.name, ms: Date.now()-t, game_count: games.length, id_used: player.id };
-      } catch(e) { logError = e.message; }
+  // Step 2: fetchLog for all 25 in parallel WITH 7s timeout (exact same as trending.js)
+  const logMap = {};
+  const fetchWithTimeout = (p,ms=7000) => Promise.race([p, new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),ms))]);
+  const t0 = Date.now();
+  await Promise.all(Object.entries(playerObjs).map(async ([name,p]) => {
+    try {
+      const r = await fetchWithTimeout(fetch(`https://${host}/api/nfl?action=gamelog&id=${encodeURIComponent(p.id||'')}`));
+      const d = await r.json();
+      logMap[name] = Array.isArray(d)?d:[];
+    } catch(e) {
+      logMap[name] = { error: e.message };
     }
-    results[name] = { ...(results[name]||{}), player_found: !!player, player_id: player?.id, logError };
-  }
+  }));
+  const totalMs = Date.now()-t0;
 
-  return res.json({ projs_total: projs.length, players_tested: players, results });
+  const summary = Object.fromEntries(Object.entries(logMap).map(([k,v])=>[k, Array.isArray(v)?v.length:`ERROR:${v.error}`]));
+  return res.json({ players_found: Object.keys(playerObjs).length, total_fetch_ms: totalMs, log_counts: summary });
 }
