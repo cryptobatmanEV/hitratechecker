@@ -39,9 +39,9 @@ async function fetchPage(tour, page) {
   } catch { return []; }
 }
 
-// Scan player list pages to find a player by name, caching each page as we go.
-// Pages are sorted alphabetically by first name. We scan up to 15 pages per tour
-// (ATP + WTA), aborting early when we've alphabetically overshot the target.
+// Scan player list pages to find a player by name.
+// Pages are fetched in parallel batches of 5 and cached permanently after first fetch.
+// The list is alphabetical by first name — we exit early once we've overshot.
 async function findTennisPlayer(name) {
   const n = norm(name);
 
@@ -49,31 +49,41 @@ async function findTennisPlayer(name) {
   const hit = _playerCache[n];
   if (hit && Date.now() - hit.ts < PLAYER_TTL) return hit;
 
+  const targetFirstChar = name.split(' ')[0].toLowerCase().charAt(0);
+  const nameParts = n.split(' ').filter(Boolean);
+
   for (const tour of ['atp', 'wta']) {
-    for (let page = 1; page <= 15; page++) {
-      const players = await fetchPage(tour, page);
-      if (!players.length) break;
+    // Fetch 5 pages in parallel per batch — cached pages cost 0 API calls
+    for (let bStart = 1; bStart <= 25; bStart += 5) {
+      const pageNums = [bStart, bStart+1, bStart+2, bStart+3, bStart+4];
+      const pages = await Promise.all(pageNums.map(p => fetchPage(tour, p)));
 
-      // Exact match first
-      let match = players.find(p => norm(p.name) === n);
+      let overshot = false;
+      for (const players of pages) {
+        if (!players.length) { overshot = true; break; }
 
-      // Partial: every word in the query appears in the player name
-      if (!match && name.includes(' ')) {
-        const parts = n.split(' ').filter(Boolean);
-        match = players.find(p => parts.every(pt => norm(p.name).includes(pt)));
+        // Exact match
+        let match = players.find(p => norm(p.name) === n);
+
+        // All-parts match (handles "Carlos Alcaraz" → "Carlos Alcaraz Garfia")
+        if (!match && nameParts.length > 1) {
+          match = players.find(p => {
+            const pn = norm(p.name);
+            return nameParts.every(pt => pn.includes(pt));
+          });
+        }
+
+        if (match) {
+          const result = { id: match.id, name: match.name, tour, countryAcr: match.countryAcr || null };
+          _playerCache[n] = { ...result, ts: Date.now() };
+          return result;
+        }
+
+        // Alphabetical overshoot: last player's first letter exceeds our target
+        const lastFirstChar = (players[players.length - 1]?.name || '').toLowerCase().charAt(0);
+        if (bStart > 5 && lastFirstChar > targetFirstChar) { overshot = true; break; }
       }
-
-      if (match) {
-        const result = { id: match.id, name: match.name, tour, countryAcr: match.countryAcr || null };
-        _playerCache[n] = { ...result, ts: Date.now() };
-        return result;
-      }
-
-      // Alphabetical early-exit: if the last player on this page starts a letter
-      // after the first letter of our target's first name, we've overshot.
-      const targetFirst = name.split(' ')[0].toLowerCase();
-      const lastFirst   = (players[players.length - 1]?.name || '').split(' ')[0].toLowerCase();
-      if (page >= 2 && lastFirst.charAt(0) > targetFirst.charAt(0)) break;
+      if (overshot) break;
     }
   }
 
