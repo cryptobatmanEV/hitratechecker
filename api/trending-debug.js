@@ -10,38 +10,23 @@ async function get(url) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
 
-  // Get 2024 Djokovic eventlog
-  const log = await get('https://sports.core.api.espn.com/v2/sports/tennis/leagues/atp/seasons/2024/athletes/296/eventlog?limit=5');
+  // Fetch linescores for Djokovic (id 296) in comp 150053 (2024-10-08)
+  const ls296 = await get('https://sports.core.api.espn.com/v2/sports/tennis/leagues/atp/events/315-2024/competitions/150053/competitors/296/linescores');
+  // Fetch opponent linescores too (id 7602)
+  const ls7602 = await get('https://sports.core.api.espn.com/v2/sports/tennis/leagues/atp/events/315-2024/competitions/150053/competitors/7602/linescores');
+
+  // Also fetch 3 more competitions to see if linescores are consistent
+  const log = await get('https://sports.core.api.espn.com/v2/sports/tennis/leagues/atp/seasons/2024/athletes/296/eventlog?limit=8');
   const items = log?.events?.items || [];
-
-  // Just grab the 3rd competition ref and inspect it fully
-  const compRef = items[2]?.competition?.$ref;
-  if (!compRef) return res.json({error:'no comp ref', items_count: items.length});
-
-  const comp = await get(compRef);
-  if (!comp) return res.json({error:'comp fetch failed'});
-
-  // Competitor details
-  const competitors = comp.competitors?.map(c=>({
-    id: c.id,
-    winner: c.winner,
-    score: c.score,
-    linescores: c.linescores,
-    stats_ref: c.statistics?.$ref?.slice(-50),
+  // Check which items have linescore refs
+  const linescore_check = items.slice(0,5).map(item=>({
+    has_competition: !!item?.competition?.$ref,
+    played: item?.played,
   }));
 
-  // Try summary endpoint
-  const summary = await get(`https://site.api.espn.com/apis/site/v2/sports/tennis/atp/summary?event=${comp.id}`);
-
   return res.json({
-    comp_id: comp.id,
-    comp_date: comp.date,
-    comp_status_type: comp.status?.type?.name,
-    competitors,
-    summary_keys: summary ? Object.keys(summary) : null,
-    summary_comps: summary?.header?.competitions?.[0]?.competitors?.map(c=>({
-      id: c.id, winner: c.winner, score: c.score,
-      linescores: c.linescores?.slice(0,4),
-    })),
+    djokovic_linescores: ls296,
+    opponent_linescores: ls7602,
+    linescore_check,
   });
 }
