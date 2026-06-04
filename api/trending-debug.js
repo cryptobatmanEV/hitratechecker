@@ -1,54 +1,53 @@
 export const config = { maxDuration: 30 };
-const KEY  = process.env.RAPIDAPI_TENNIS_KEY;
-const HOST = 'tennis-api-atp-wta-itf.p.rapidapi.com';
-const BASE = `https://${HOST}`;
+const UA = 'Mozilla/5.0';
+async function get(url) {
+  const r = await fetch(url.replace('http://','https://'),{headers:{'User-Agent':UA},signal:AbortSignal.timeout(8000)});
+  return r.json().catch(()=>null);
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // 1. Confirm key is present
-  out.key_present = !!KEY;
-  out.key_prefix  = KEY ? KEY.slice(0,8)+'...' : null;
+  // Get 2024 eventlog - more likely to have complete data
+  const log = await get('https://sports.core.api.espn.com/v2/sports/tennis/leagues/atp/seasons/2024/athletes/296/eventlog?limit=10');
+  out.events_count = log?.events?.count;
 
-  // 2. Fetch page 1 of ATP - what is the actual response structure?
-  try {
-    const r = await fetch(`${BASE}/tennis/v2/atp/player?pageSize=10&pageNo=1&filter=PlayerGroup:singles`,
-      {headers:{'x-rapidapi-key':KEY,'x-rapidapi-host':HOST},signal:AbortSignal.timeout(8000)});
-    const body = await r.json();
-    out.page1_status  = r.status;
-    out.page1_is_array = Array.isArray(body);
-    out.page1_has_data = !!body?.data;
-    out.page1_data_is_array = Array.isArray(body?.data);
-    const list = Array.isArray(body) ? body : (body?.data || []);
-    out.page1_list_len = list.length;
-    out.page1_first = list[0];
-  } catch(e) { out.page1_err = e.message; }
+  // Find first match where opponent is NOT id=0
+  const items = log?.events?.items || [];
+  let targetItem = null;
+  for (const item of items) {
+    const comp = await get(item?.competition?.$ref);
+    const hasRealOpponent = comp?.competitors?.some(c => c.id !== '296' && c.id !== '0');
+    if (hasRealOpponent) {
+      targetItem = { item, comp };
+      break;
+    }
+  }
 
-  // 3. Try page 3 (likely has "C" names for Carlos Alcaraz)
-  try {
-    const r = await fetch(`${BASE}/tennis/v2/atp/player?pageSize=200&pageNo=3&filter=PlayerGroup:singles`,
-      {headers:{'x-rapidapi-key':KEY,'x-rapidapi-host':HOST},signal:AbortSignal.timeout(8000)});
-    const body = await r.json();
-    const list = Array.isArray(body) ? body : (body?.data || []);
-    const alcaraz = list.find(p => (p.name||'').toLowerCase().includes('alcaraz'));
-    out.page3_len = list.length;
-    out.page3_has_alcaraz = !!alcaraz;
-    out.page3_alcaraz = alcaraz || null;
-    out.page3_first3 = list.slice(0,3).map(p=>p.name);
-    out.page3_last3  = list.slice(-3).map(p=>p.name);
-  } catch(e) { out.page3_err = e.message; }
+  if (targetItem) {
+    const { comp } = targetItem;
+    out.comp_date = comp.date;
+    out.comp_id = comp.id;
+    out.comp_competitors = comp.competitors?.map(c=>({
+      id:c.id, winner:c.winner, score:c.score,
+      linescores: c.linescores?.map(l=>({value:l.value})),
+      has_stats: !!c.statistics?.$ref,
+    }));
+    out.comp_format = comp.format;
+    out.comp_status = comp.status;
 
-  // 4. Check current PP tennis projections (do any match our supported stats?)
-  try {
-    const r = await fetch('https://api.prizepicks.com/projections?league_id=5&per_page=50',
-      {headers:{'User-Agent':'Mozilla/5.0','Referer':'https://app.prizepicks.com/'}});
-    const d = await r.json();
-    const projs = (d.data||[]).filter(p=>p.type==='projection');
-    out.pp_total = projs.length;
-    out.pp_stat_types = [...new Set(projs.map(p=>p.attributes?.stat_type))];
-    out.pp_supported = projs.filter(p=>['Total Sets','Total Games','Total Games Won','Total Tie Breaks'].includes(p.attributes?.stat_type)).length;
-  } catch(e) { out.pp_err = e.message; }
+    // Try ESPN summary endpoint for the match score
+    const summary = await get(`https://site.api.espn.com/apis/site/v2/sports/tennis/atp/summary?event=${comp.id}`);
+    out.summary_keys = summary ? Object.keys(summary) : null;
+    out.summary_boxscore = summary?.boxScore ? JSON.stringify(summary.boxScore).slice(0,600) : null;
+    out.summary_linescore = summary?.header?.competitions?.[0]?.competitors?.map(c=>({
+      id:c.id, winner:c.winner, score:c.score,
+      linescores: c.linescores?.map(l=>({value:l.value})),
+    }));
+  } else {
+    out.no_real_opponent = true;
+  }
 
   return res.json(out);
 }
