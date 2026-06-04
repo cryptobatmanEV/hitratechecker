@@ -13,29 +13,38 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // 1. Test the provided endpoint
-  const t1 = await get('/tennis/v2/atp/player/tournament-record/68074/21305');
-  out.tournament_record = {status:t1.status, keys:t1.body?Object.keys(t1.body):null, preview:JSON.stringify(t1.body).slice(0,400)};
+  // 1. Search for both ATP and WTA players
+  const search = await get('/tennis/v2/search?search=Djokovic');
+  const buckets = search.body?.data || [];
+  const atpBucket = buckets.find(b=>b.category==='player_atp');
+  const wtaBucket = buckets.find(b=>b.category==='player_wta');
+  const atpPlayer = atpBucket?.result?.[0];
+  out.search_atp = {id:atpPlayer?.id, name:atpPlayer?.name};
 
-  // 2. Try player search
-  const t2 = await get('/tennis/v2/atp/player/search/Djokovic');
-  out.search_atp = {status:t2.status, preview:JSON.stringify(t2.body).slice(0,400)};
+  // Also find a WTA player
+  const sabaSearch = await get('/tennis/v2/search?search=Sabalenka');
+  const sabaBuckets = sabaSearch.body?.data || [];
+  const wtaPlayer = sabaBuckets.find(b=>b.category==='player_wta')?.result?.[0];
+  out.search_wta = {id:wtaPlayer?.id, name:wtaPlayer?.name};
 
-  // 3. Try player recent matches / activity
-  const t3 = await get('/tennis/v2/atp/player/activity/68074');
-  out.player_activity = {status:t3.status, preview:JSON.stringify(t3.body).slice(0,400)};
+  // 2. CRITICAL: past-matches - does it have per-match aces/DFs?
+  if (atpPlayer?.id) {
+    const pm = await get(`/tennis/v2/atp/player/past-matches/${atpPlayer.id}`);
+    out.past_matches_status = pm.status;
+    out.past_matches_keys = pm.body ? Object.keys(pm.body) : null;
+    const matches = pm.body?.data || pm.body?.matches || pm.body;
+    const firstMatch = Array.isArray(matches) ? matches[0] : null;
+    out.first_match_keys = firstMatch ? Object.keys(firstMatch) : null;
+    out.first_match_sample = firstMatch ? JSON.stringify(firstMatch).slice(0,600) : null;
+    out.total_matches = Array.isArray(matches) ? matches.length : null;
+  }
 
-  // 4. Try player profile
-  const t4 = await get('/tennis/v2/atp/player/68074');
-  out.player_profile = {status:t4.status, preview:JSON.stringify(t4.body).slice(0,300)};
-
-  // 5. Try player stats
-  const t5 = await get('/tennis/v2/atp/player/stats/68074');
-  out.player_stats = {status:t5.status, preview:JSON.stringify(t5.body).slice(0,400)};
-
-  // 6. Try WTA search too (PP has both ATP and WTA players)
-  const t6 = await get('/tennis/v2/wta/player/search/Sabalenka');
-  out.search_wta = {status:t6.status, preview:JSON.stringify(t6.body).slice(0,300)};
+  // 3. Also check if there's a filter option for past-matches (year, pageSize)
+  if (atpPlayer?.id) {
+    const pm2 = await get(`/tennis/v2/atp/player/past-matches/${atpPlayer.id}?pageSize=3`);
+    out.past_matches_paginated_count = pm2.body?.data?.length || pm2.body?.length;
+    out.past_matches_second_match = JSON.stringify((pm2.body?.data||pm2.body)?.[1]).slice(0,400);
+  }
 
   return res.json(out);
 }
