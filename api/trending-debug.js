@@ -12,28 +12,30 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // Full raw search result to see exact field names
-  const s = await get('/tennis/v2/search?search=Djokovic');
-  out.raw_search = JSON.stringify(s.body).slice(0,1000);
+  // 1. How many ATP players total? Try large pageSize
+  const p1 = await get('/tennis/v2/atp/player?pageSize=500&pageNo=1');
+  const atpPlayers = p1.body;
+  out.atp_count = Array.isArray(atpPlayers) ? atpPlayers.length : null;
+  out.atp_keys = atpPlayers?.[0] ? Object.keys(atpPlayers[0]) : null;
+  out.atp_sample = atpPlayers?.slice(0,2);
 
-  // Extract player ID whatever field it's in
-  const buckets = s.body?.data || [];
-  const atpResult = buckets.find(b=>b.category==='player_atp')?.result?.[0];
-  out.atp_result_keys = atpResult ? Object.keys(atpResult) : null;
-  out.atp_result_full = atpResult;
+  // Find Djokovic in the list
+  const djok = Array.isArray(atpPlayers) ? atpPlayers.find(p=>p.name?.includes('Djokovic')) : null;
+  out.djokovic_found = djok;
 
-  // Use whichever ID field exists
-  const pid = atpResult?.id || atpResult?.playerId || atpResult?.player_id;
-  out.resolved_pid = pid;
+  // 2. WTA player count
+  const p2 = await get('/tennis/v2/wta/player?pageSize=500&pageNo=1');
+  const wtaPlayers = p2.body;
+  out.wta_count = Array.isArray(wtaPlayers) ? wtaPlayers.length : null;
 
-  if (pid) {
-    const pm = await get(`/tennis/v2/atp/player/past-matches/${pid}`);
+  // 3. Test past-matches with Djokovic's ID
+  if (djok?.id) {
+    const pm = await get(`/tennis/v2/atp/player/past-matches/${djok.id}`);
     out.past_matches_status = pm.status;
-    const matches = pm.body?.data || pm.body;
-    const first = Array.isArray(matches) ? matches[0] : (matches?.data?.[0]);
-    out.first_match_keys = first ? Object.keys(first) : null;
-    out.first_match_full = first ? JSON.stringify(first).slice(0,800) : null;
-    out.total_count = Array.isArray(matches) ? matches.length : null;
+    const matches = Array.isArray(pm.body) ? pm.body : pm.body?.data;
+    out.total_matches = matches?.length;
+    out.first_match = JSON.stringify(matches?.[0]).slice(0,600);
+    out.second_match = JSON.stringify(matches?.[1]).slice(0,400);
   }
 
   return res.json(out);
