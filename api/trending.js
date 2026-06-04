@@ -367,7 +367,8 @@ async function findPlayer(name, sport, host) {
 async function fetchLog(player, sport, host) {
   try {
     if (sport === 'tennis') {
-      const r = await fetch(`https://${host}/api/tennis?action=gamelog&id=${encodeURIComponent(player.id||'')}&tour=${encodeURIComponent(player.tour||'atp')}`);
+      const lg = player.league || player.tour || 'atp';
+      const r = await fetch(`https://${host}/api/tennis?action=gamelog&id=${encodeURIComponent(player.id||'')}&league=${encodeURIComponent(lg)}`);
       if (!r.ok) return [];
       const d = await r.json();
       return Array.isArray(d) ? d : [];
