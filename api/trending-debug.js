@@ -1,43 +1,47 @@
 export const config = { maxDuration: 30 };
-const UA = 'Mozilla/5.0';
-async function safeGet(url) {
-  try {
-    if (!url || typeof url !== 'string') return null;
-    const r = await fetch(url.replace('http://','https://'),{headers:{'User-Agent':UA}});
-    return r.json().catch(()=>null);
-  } catch { return null; }
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+const H = {'User-Agent':UA,'Referer':'https://www.sofascore.com/'};
+
+async function get(url) {
+  const r = await fetch(url,{headers:H});
+  return {status:r.status, body:await r.json().catch(()=>null)};
 }
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // Step 1: get eventlog item
-  const log = await safeGet('https://sports.core.api.espn.com/v2/sports/tennis/leagues/atp/seasons/2025/athletes/296/eventlog?limit=2');
-  const item = log?.events?.items?.[0];
-  out.item_keys = item ? Object.keys(item) : null;
-  out.item_competitor_ref = item?.competitor?.$ref?.slice(-60);
+  // 1. Search Sofascore for Djokovic
+  const s = await get('https://api.sofascore.com/api/v1/search/all?q=Djokovic');
+  const players = (s.body?.results||[]).filter(r=>r.type==='player'&&r.entity?.sport?.slug==='tennis');
+  out.search_status = s.status;
+  out.player_found = players[0]?.entity ? {id:players[0].entity.id, name:players[0].entity.name} : null;
 
-  // Step 2: fetch competition
-  const comp = await safeGet(item?.competition?.$ref);
-  out.comp_statsSource = typeof comp?.statsSource === 'string' ? comp.statsSource.slice(-80) : comp?.statsSource;
-  out.comp_competitors = comp?.competitors?.slice(0,2).map(c=>({
-    id: c.id,
-    winner: c.winner,
-    has_stats_ref: !!c.statistics?.$ref,
-    stats_ref_tail: c.statistics?.$ref?.slice(-60),
-    score: c.score,
-  }));
+  const pid = players[0]?.entity?.id;
+  if (pid) {
+    // 2. Get recent events (matches)
+    const events = await get(`https://api.sofascore.com/api/v1/player/${pid}/events/last/0`);
+    out.events_status = events.status;
+    out.events_count = events.body?.events?.length;
+    const firstEvent = events.body?.events?.[0];
+    out.first_event = firstEvent ? {id:firstEvent.id, name:firstEvent.homeTeam?.name+' vs '+firstEvent.awayTeam?.name, date:firstEvent.startTimestamp} : null;
 
-  // Step 3: fetch item.competitor ref
-  const competitor = await safeGet(item?.competitor?.$ref);
-  out.competitor_preview = competitor ? JSON.stringify(competitor).slice(0,500) : null;
-
-  // Step 4: fetch the competitor stats from competition object
-  const myCompStats = comp?.competitors?.find(c=>c.id==='296')?.statistics?.$ref;
-  const stats = await safeGet(myCompStats);
-  out.stats_preview = stats ? JSON.stringify(stats).slice(0,500) : null;
-  out.stats_keys = stats ? Object.keys(stats) : null;
+    // 3. Get statistics for that match
+    if (firstEvent?.id) {
+      const stats = await get(`https://api.sofascore.com/api/v1/event/${firstEvent.id}/statistics`);
+      out.stats_status = stats.status;
+      const allGroups = stats.body?.statistics?.[0]?.groups;
+      out.stat_groups = allGroups?.map(g=>g.groupName);
+      // Find serve stats group
+      const serveGroup = allGroups?.find(g=>g.groupName?.toLowerCase().includes('serv'));
+      out.serve_stats = serveGroup?.statisticsItems?.map(i=>({name:i.name,home:i.home,away:i.away}));
+      // Show all items from first 2 groups
+      out.first_two_groups = allGroups?.slice(0,2).map(g=>({
+        name:g.groupName,
+        items:g.statisticsItems?.map(i=>({name:i.name,home:i.home,away:i.away}))
+      }));
+    }
+  }
 
   return res.json(out);
 }
