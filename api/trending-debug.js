@@ -1,58 +1,54 @@
 export const config = { maxDuration: 30 };
-const UA = 'Mozilla/5.0';
-const PP_HDRS = {Accept:'application/json','User-Agent':UA,'Referer':'https://app.prizepicks.com/'};
+const KEY  = process.env.RAPIDAPI_TENNIS_KEY;
+const HOST = 'tennis-api-atp-wta-itf.p.rapidapi.com';
+const BASE = `https://${HOST}`;
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
-  const host = req.headers.host;
   const out = {};
 
-  // Step 1: get a missing player ID from LoL
-  const r = await fetch('https://api.prizepicks.com/projections?league_id=121&per_page=250', {headers:PP_HDRS});
-  const d = await r.json();
-  const pMap = {};
-  for (const i of d.included||[]) {
-    if (i.type==='new_player') pMap[i.id]={name:i.attributes?.display_name||i.attributes?.name,combo:i.attributes?.combo===true};
-  }
-  const projs = (d.data||[]).filter(p=>p.type==='projection');
-  const missingIds = [...new Set(projs.map(p=>p.relationships?.new_player?.data?.id).filter(id=>id&&!pMap[id]))];
-  out.pmap_size = Object.keys(pMap).length;
-  out.missing_count = missingIds.length;
-  out.missing_sample = missingIds.slice(0,3);
+  // 1. Confirm key is present
+  out.key_present = !!KEY;
+  out.key_prefix  = KEY ? KEY.slice(0,8)+'...' : null;
 
-  // Step 2: test the new_players endpoint for a missing ID
-  if (missingIds[0]) {
-    const tid = missingIds[0];
-    const pr = await fetch(`https://api.prizepicks.com/new_players/${tid}`, {headers:PP_HDRS});
-    const pd = await pr.json().catch(e=>({error:e.message}));
-    out.new_players_endpoint = {
-      id: tid,
-      status: pr.status,
-      ok: pr.ok,
-      response_keys: Object.keys(pd),
-      data_type: pd.data?.type,
-      attrs: pd.data?.attributes ? {name:pd.data.attributes.display_name||pd.data.attributes.name, combo:pd.data.attributes.combo} : null,
-      errors: pd.errors?.slice(0,2),
-    };
-  }
+  // 2. Fetch page 1 of ATP - what is the actual response structure?
+  try {
+    const r = await fetch(`${BASE}/tennis/v2/atp/player?pageSize=10&pageNo=1&filter=PlayerGroup:singles`,
+      {headers:{'x-rapidapi-key':KEY,'x-rapidapi-host':HOST},signal:AbortSignal.timeout(8000)});
+    const body = await r.json();
+    out.page1_status  = r.status;
+    out.page1_is_array = Array.isArray(body);
+    out.page1_has_data = !!body?.data;
+    out.page1_data_is_array = Array.isArray(body?.data);
+    const list = Array.isArray(body) ? body : (body?.data || []);
+    out.page1_list_len = list.length;
+    out.page1_first = list[0];
+  } catch(e) { out.page1_err = e.message; }
 
-  // Step 3: check the pMap entries we DO have — are any combo:false?
-  const pMapValues = Object.values(pMap);
-  out.pmap_combo_false = pMapValues.filter(p=>!p.combo).length;
-  out.pmap_combo_true = pMapValues.filter(p=>p.combo).length;
-  out.pmap_sample_noncombo = pMapValues.filter(p=>!p.combo).slice(0,3).map(p=>p.name);
+  // 3. Try page 3 (likely has "C" names for Carlos Alcaraz)
+  try {
+    const r = await fetch(`${BASE}/tennis/v2/atp/player?pageSize=200&pageNo=3&filter=PlayerGroup:singles`,
+      {headers:{'x-rapidapi-key':KEY,'x-rapidapi-host':HOST},signal:AbortSignal.timeout(8000)});
+    const body = await r.json();
+    const list = Array.isArray(body) ? body : (body?.data || []);
+    const alcaraz = list.find(p => (p.name||'').toLowerCase().includes('alcaraz'));
+    out.page3_len = list.length;
+    out.page3_has_alcaraz = !!alcaraz;
+    out.page3_alcaraz = alcaraz || null;
+    out.page3_first3 = list.slice(0,3).map(p=>p.name);
+    out.page3_last3  = list.slice(-3).map(p=>p.name);
+  } catch(e) { out.page3_err = e.message; }
 
-  // Step 4: check how many projs have a player in pMap and are non-combo
-  let matched=0, nameOk=0, notCombo=0, resolvOk=0;
-  for (const p of projs) {
-    const pid = p.relationships?.new_player?.data?.id;
-    const pl = pMap[pid]||{};
-    if (pl.name) nameOk++;
-    if (pl.name && p.attributes?.event_type!=='combo') notCombo++;
-    // rough check
-    matched++;
-  }
-  out.filter_check = {total:projs.length, has_name:nameOk, name_and_not_combo:notCombo};
+  // 4. Check current PP tennis projections (do any match our supported stats?)
+  try {
+    const r = await fetch('https://api.prizepicks.com/projections?league_id=5&per_page=50',
+      {headers:{'User-Agent':'Mozilla/5.0','Referer':'https://app.prizepicks.com/'}});
+    const d = await r.json();
+    const projs = (d.data||[]).filter(p=>p.type==='projection');
+    out.pp_total = projs.length;
+    out.pp_stat_types = [...new Set(projs.map(p=>p.attributes?.stat_type))];
+    out.pp_supported = projs.filter(p=>['Total Sets','Total Games','Total Games Won','Total Tie Breaks'].includes(p.attributes?.stat_type)).length;
+  } catch(e) { out.pp_err = e.message; }
 
   return res.json(out);
 }
