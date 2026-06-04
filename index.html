@@ -387,6 +387,7 @@ function App(){
   const [mlbGrp,setMlbGrp] =useState("hitting");
   const [esGame,setEsGame]  =useState("cs2");
   const [mapScope,setMapScope]=useState("total"); // "total"|"1"|"2"|"3"|"4"|"5"|"1+2"|"1+2+3"
+  const [tennisBo,setTennisBo]=useState(0); // 0=all, 3=BO3 only, 5=BO5 only
 
   // Unified player — for esports, player.routing stores the Riot routing region
   const [player,setPlayer]  =useState(null);
@@ -449,7 +450,7 @@ function App(){
   const statList=isMLB?(mlbGrp==="hitting"?HIT_STATS:PIT_STATS):isNFL?NFL_STATS:isCFB?CFB_STATS:isNHL?NHL_STATS:isWNBA?WNBA_STATS:isNBA?NBA_STATS:isTennis?TENNIS_STATS:(ES_STATS[esGame]||ES_STATS.cs2);
 
   const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setH2hIn("");setH2hAct("");setOppTmId(null);setOppTm("");setLogPage(0);setWnbaNextOpp(null);};
-  useEffect(()=>{clearAll();setMapScope("total");},[sport,mlbGrp,esGame]);
+  useEffect(()=>{clearAll();setMapScope("total");setTennisBo(0);},[sport,mlbGrp,esGame]);
   useEffect(()=>{if(isMLB){setGLoad(true);getTodayGames().then(g=>setToday(g)).catch(()=>{}).finally(()=>setGLoad(false));}},[sport]);
   useEffect(()=>{const h=e=>{if(pWrap.current&&!pWrap.current.contains(e.target))setShowPD(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]); 
   // Reset scope when sport changes (not on every fetch)
@@ -638,7 +639,8 @@ function App(){
   const l30=hasData?hitRate(recentG.slice(0,30),getVal,lineNum,ou):null;
   const seasonR=hasData?hitRate(gameLog,getVal,lineNum,ou):null;
   const careerAllG=(isNFL||isCFB||isNHL||isWNBA||isNBA||isMLB)?[...gameLog,...carLog]:carLog;
-  const logGames=(isNFL||isCFB||isNHL||isWNBA||isNBA)?careerAllG:gameLog;
+  const _rawLogGames=(isNFL||isCFB||isNHL||isWNBA||isNBA)?careerAllG:gameLog;
+  const logGames=isTennis&&tennisBo?_rawLogGames.filter(g=>g.bestOf===tennisBo):_rawLogGames;
   const LOG_PER_PAGE=30;
   const logPageCount=Math.ceil(logGames.length/LOG_PER_PAGE);
   const logSlice=logGames.slice(logPage*LOG_PER_PAGE,(logPage+1)*LOG_PER_PAGE);
@@ -840,6 +842,7 @@ function App(){
         onSelect={p=>setPlayer(p)}
         selected={player}
       />}
+      {isTennis&&<div className="card"><div className="label-sm">MATCH FORMAT</div><div className="btn-group"><button className={"sport-btn"+(tennisBo===0?" active":"")} onClick={()=>setTennisBo(0)}>ALL</button><button className={"sport-btn"+(tennisBo===3?" active":"")} onClick={()=>setTennisBo(3)}>BO3 ONLY</button><button className={"sport-btn"+(tennisBo===5?" active":"")} onClick={()=>setTennisBo(5)}>BO5 ONLY</button></div><div style={{fontSize:10,color:"rgba(255,255,255,0.35)",marginTop:6}}>Grand Slams (men's) are BO5 · All other events are BO3</div></div>}
       {/* MLB opposing pitcher */}
       {isMLB&&mlbGrp==="hitting"&&(
         <div className="card">
