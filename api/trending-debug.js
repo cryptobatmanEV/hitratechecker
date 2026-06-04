@@ -1,53 +1,47 @@
 export const config = { maxDuration: 30 };
 const UA = 'Mozilla/5.0';
 async function get(url) {
-  const r = await fetch(url.replace('http://','https://'),{headers:{'User-Agent':UA},signal:AbortSignal.timeout(8000)});
-  return r.json().catch(()=>null);
+  try {
+    const r = await fetch(url.replace('http://','https://'),{headers:{'User-Agent':UA},signal:AbortSignal.timeout(7000)});
+    return r.json().catch(()=>null);
+  } catch { return null; }
 }
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
-  const out = {};
 
-  // Get 2024 eventlog - more likely to have complete data
-  const log = await get('https://sports.core.api.espn.com/v2/sports/tennis/leagues/atp/seasons/2024/athletes/296/eventlog?limit=10');
-  out.events_count = log?.events?.count;
-
-  // Find first match where opponent is NOT id=0
+  // Get 2024 Djokovic eventlog
+  const log = await get('https://sports.core.api.espn.com/v2/sports/tennis/leagues/atp/seasons/2024/athletes/296/eventlog?limit=5');
   const items = log?.events?.items || [];
-  let targetItem = null;
-  for (const item of items) {
-    const comp = await get(item?.competition?.$ref);
-    const hasRealOpponent = comp?.competitors?.some(c => c.id !== '296' && c.id !== '0');
-    if (hasRealOpponent) {
-      targetItem = { item, comp };
-      break;
-    }
-  }
 
-  if (targetItem) {
-    const { comp } = targetItem;
-    out.comp_date = comp.date;
-    out.comp_id = comp.id;
-    out.comp_competitors = comp.competitors?.map(c=>({
-      id:c.id, winner:c.winner, score:c.score,
-      linescores: c.linescores?.map(l=>({value:l.value})),
-      has_stats: !!c.statistics?.$ref,
-    }));
-    out.comp_format = comp.format;
-    out.comp_status = comp.status;
+  // Just grab the 3rd competition ref and inspect it fully
+  const compRef = items[2]?.competition?.$ref;
+  if (!compRef) return res.json({error:'no comp ref', items_count: items.length});
 
-    // Try ESPN summary endpoint for the match score
-    const summary = await get(`https://site.api.espn.com/apis/site/v2/sports/tennis/atp/summary?event=${comp.id}`);
-    out.summary_keys = summary ? Object.keys(summary) : null;
-    out.summary_boxscore = summary?.boxScore ? JSON.stringify(summary.boxScore).slice(0,600) : null;
-    out.summary_linescore = summary?.header?.competitions?.[0]?.competitors?.map(c=>({
-      id:c.id, winner:c.winner, score:c.score,
-      linescores: c.linescores?.map(l=>({value:l.value})),
-    }));
-  } else {
-    out.no_real_opponent = true;
-  }
+  const comp = await get(compRef);
+  if (!comp) return res.json({error:'comp fetch failed'});
 
-  return res.json(out);
+  // Competitor details
+  const competitors = comp.competitors?.map(c=>({
+    id: c.id,
+    winner: c.winner,
+    score: c.score,
+    linescores: c.linescores,
+    stats_ref: c.statistics?.$ref?.slice(-50),
+  }));
+
+  // Try summary endpoint
+  const summary = await get(`https://site.api.espn.com/apis/site/v2/sports/tennis/atp/summary?event=${comp.id}`);
+
+  return res.json({
+    comp_id: comp.id,
+    comp_date: comp.date,
+    comp_status_type: comp.status?.type?.name,
+    competitors,
+    summary_keys: summary ? Object.keys(summary) : null,
+    summary_comps: summary?.header?.competitions?.[0]?.competitors?.map(c=>({
+      id: c.id, winner: c.winner, score: c.score,
+      linescores: c.linescores?.slice(0,4),
+    })),
+  });
 }
