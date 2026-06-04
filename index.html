@@ -137,8 +137,8 @@ const ES_STATS={
 // ── NFL helpers ─────────────────────────────────────────────────────────────
 async function searchNFL(q){const r=await fetch(`/api/nfl?action=search&q=${encodeURIComponent(q)}`);return r.json();}
 async function getNFLLog(id){const r=await fetch(`/api/nfl?action=gamelog&id=${encodeURIComponent(id)}`);if(!r.ok)return[];const d=await r.json();return Array.isArray(d)?d:[];}
-async function searchTennis(q){const r=await fetch(`/api/tennis?action=search&q=${encodeURIComponent(q)}`);const d=await r.json().catch(()=>({}));if(d.error==='RATE_LIMITED')throw new Error('Tennis API daily limit reached — resets at midnight UTC.');if(!r.ok||d.error)throw new Error(d.error||'Player not found');return[d];}
-async function getTennisLog(id,tour){const r=await fetch(`/api/tennis?action=gamelog&id=${encodeURIComponent(id)}&tour=${encodeURIComponent(tour||'atp')}`);if(!r.ok)return[];const d=await r.json();return Array.isArray(d)?d:[];}
+async function searchTennis(q){const r=await fetch(`/api/tennis?action=search&q=${encodeURIComponent(q)}`);const d=await r.json().catch(()=>({}));if(!r.ok||d.error)throw new Error(d.error||'Player not found');return[d];}
+async function getTennisLog(id,league){const r=await fetch(`/api/tennis?action=gamelog&id=${encodeURIComponent(id)}&league=${encodeURIComponent(league||'atp')}`);if(!r.ok)return[];const d=await r.json();return Array.isArray(d)?d:[];}
 
 // ── CFB helpers ─────────────────────────────────────────────────────────────
 async function searchCFB(q){const r=await fetch(`/api/cfb?action=search&q=${encodeURIComponent(q)}`);return r.json();}
@@ -553,7 +553,7 @@ function App(){
         setGameLog(log);setCarLog(log);
       }else if(isTennis){
         setDebug("Fetching tennis match history...");
-        const log=await getTennisLog(player.id,player.tour);
+        const log=await getTennisLog(player.id,player.league||'atp');
         if(!log.length)throw new Error(`No match history found for ${player.name}. Player may be inactive or not found.`);
         setGameLog(log);setCarLog(log);
       }else if(isNBA){
