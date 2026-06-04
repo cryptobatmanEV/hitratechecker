@@ -138,6 +138,8 @@ const ES_STATS={
 // ── NFL helpers ─────────────────────────────────────────────────────────────
 async function searchNFL(q){const r=await fetch(`/api/nfl?action=search&q=${encodeURIComponent(q)}`);return r.json();}
 async function getNFLLog(id){const r=await fetch(`/api/nfl?action=gamelog&id=${encodeURIComponent(id)}`);if(!r.ok)return[];const d=await r.json();return Array.isArray(d)?d:[];}
+async function searchTennis(q){const r=await fetch(`/api/tennis?action=search&q=${encodeURIComponent(q)}`);if(!r.ok)throw new Error('Player not found');const d=await r.json();if(d.error)throw new Error(d.error);return[d];}
+async function getTennisLog(id,tour){const r=await fetch(`/api/tennis?action=gamelog&id=${encodeURIComponent(id)}&tour=${encodeURIComponent(tour||'atp')}`);if(!r.ok)return[];const d=await r.json();return Array.isArray(d)?d:[];}
 
 // ── CFB helpers ─────────────────────────────────────────────────────────────
 async function searchCFB(q){const r=await fetch(`/api/cfb?action=search&q=${encodeURIComponent(q)}`);return r.json();}
@@ -216,6 +218,12 @@ const NHL_STATS=[
   {label:'Blocked Shots', calc:g=>g.stat.blockedShots||0},
   {label:'Saves',         calc:g=>g.stat.saves||0},
   {label:'Goals Against', calc:g=>g.stat.goalsAgainst||0},
+];
+const TENNIS_STATS=[
+  {label:'Total Sets',       calc:g=>g.totalSets||0},
+  {label:'Total Games',      calc:g=>g.totalGames||0},
+  {label:'Total Games Won',  calc:g=>g.totalGamesWon||0},
+  {label:'Total Tie Breaks', calc:g=>g.totalTieBreaks||0},
 ];
 
 // ── NHL helpers (via Vercel serverless — avoids CORS) ────────────────────────
@@ -436,9 +444,10 @@ function App(){
   const isNBA=sport==="NBA";
   const isNFL=sport==="NFL";
   const isCFB=sport==="CFB";
+  const isTennis=sport==="TENNIS";
   
   const isPit=isMLB&&mlbGrp==="pitching";
-  const statList=isMLB?(mlbGrp==="hitting"?HIT_STATS:PIT_STATS):isNFL?NFL_STATS:isCFB?CFB_STATS:isNHL?NHL_STATS:isWNBA?WNBA_STATS:isNBA?NBA_STATS:(ES_STATS[esGame]||ES_STATS.cs2);
+  const statList=isMLB?(mlbGrp==="hitting"?HIT_STATS:PIT_STATS):isNFL?NFL_STATS:isCFB?CFB_STATS:isNHL?NHL_STATS:isWNBA?WNBA_STATS:isNBA?NBA_STATS:isTennis?TENNIS_STATS:(ES_STATS[esGame]||ES_STATS.cs2);
 
   const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setH2hIn("");setH2hAct("");setOppTmId(null);setOppTm("");setLogPage(0);setWnbaNextOpp(null);};
   useEffect(()=>{clearAll();setMapScope("total");},[sport,mlbGrp,esGame]);
@@ -542,6 +551,11 @@ function App(){
         setDebug("Fetching CFB game log...");
         const log=await getCFBLog(player.id);
         if(!log.length)throw new Error(`No CFB game log found for ${player.name}.`);
+        setGameLog(log);setCarLog(log);
+      }else if(isTennis){
+        setDebug("Fetching tennis match history...");
+        const log=await getTennisLog(player.id,player.tour);
+        if(!log.length)throw new Error(`No match history found for ${player.name}. Player may be inactive or not found.`);
         setGameLog(log);setCarLog(log);
       }else if(isNBA){
         setDebug("Fetching NBA game log...");
@@ -656,14 +670,14 @@ function App(){
 
       {/* Sport */}
       <div className="card"><div className="label-sm">SPORT</div><div style={{display:"flex"}}><button className={"sport-btn"+(mode==="trending"?" active":"")} style={{background:mode==="trending"?"rgba(255,200,0,0.15)":"transparent",borderColor:mode==="trending"?"#ffc800":"rgba(255,255,255,0.1)",color:mode==="trending"?"#ffc800":"rgba(255,255,255,0.4)"}} onClick={()=>setMode(mode==="trending"?"check":"trending")}>📈 TRENDING</button>
-          <button className={"sport-btn"+(sport==="MLB"?" active":"")} onClick={()=>{setMode("check");setSport("MLB");}}>MLB</button><button className={"sport-btn"+(sport==="NFL"?" active":"")} onClick={()=>setSport("NFL")}>NFL</button><button className={"sport-btn"+(sport==="CFB"?" active":"")} onClick={()=>setSport("CFB")}>CFB</button><button className={"sport-btn"+(sport==="NHL"?" active":"")} onClick={()=>setSport("NHL")}>NHL</button><button className={"sport-btn"+(sport==="WNBA"?" active":"")} onClick={()=>setSport("WNBA")}>WNBA</button><button className={"sport-btn"+(sport==="NBA"?" active":"")} onClick={()=>setSport("NBA")}>NBA</button><button className={"sport-btn"+(sport==="ESPORTS"?" active":"")} onClick={()=>setSport("ESPORTS")}>ESPORTS</button></div></div>
+          <button className={"sport-btn"+(sport==="MLB"?" active":"")} onClick={()=>{setMode("check");setSport("MLB");}}>MLB</button><button className={"sport-btn"+(sport==="NFL"?" active":"")} onClick={()=>setSport("NFL")}>NFL</button><button className={"sport-btn"+(sport==="CFB"?" active":"")} onClick={()=>setSport("CFB")}>CFB</button><button className={"sport-btn"+(sport==="NHL"?" active":"")} onClick={()=>setSport("NHL")}>NHL</button><button className={"sport-btn"+(sport==="WNBA"?" active":"")} onClick={()=>setSport("WNBA")}>WNBA</button><button className={"sport-btn"+(sport==="NBA"?" active":"")} onClick={()=>setSport("NBA")}>NBA</button><button className={"sport-btn"+(sport==="TENNIS"?" active":"")} onClick={()=>setSport("TENNIS")}>TENNIS</button><button className={"sport-btn"+(sport==="ESPORTS"?" active":"")} onClick={()=>setSport("ESPORTS")}>ESPORTS</button></div></div>
 
       {/* ─── TRENDING VIEW ──────────────────────────────────────────────────── */}
       {mode==='trending'&&<div>
         <div className="card">
           <div className="label-sm">TRENDING — SELECT SPORT</div>
           <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
-            {[['nba','NBA'],['wnba','WNBA'],['nfl','NFL'],['mlb','MLB'],['nhl','NHL'],['lol','LoL'],['dota','Dota'],['cs2','CS2']].map(([k,lbl])=>(
+            {[['nba','NBA'],['wnba','WNBA'],['nfl','NFL'],['mlb','MLB'],['nhl','NHL'],['tennis','Tennis'],['lol','LoL'],['dota','Dota'],['cs2','CS2']].map(([k,lbl])=>(
               <button key={k} className={'sport-btn'+(trendSport===k?' active':'')}
                 style={{flex:'1 0 calc(33% - 4px)'}}
                 onClick={()=>setTrendSport(k)}>{lbl}</button>
@@ -817,6 +831,13 @@ function App(){
         label="CFB PLAYER SEARCH"
         hint="Searches active college football players · Pass Yards · Rush Yards · Rec Yards · Receptions"
         onSearch={searchCFB}
+        onSelect={p=>setPlayer(p)}
+        selected={player}
+      />}
+      {isTennis&&<SearchBox
+        label="TENNIS PLAYER SEARCH"
+        hint="Searches ATP + WTA players · Total Sets · Total Games · Total Games Won · Total Tie Breaks"
+        onSearch={searchTennis}
         onSelect={p=>setPlayer(p)}
         selected={player}
       />}
