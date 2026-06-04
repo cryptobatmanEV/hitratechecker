@@ -1,44 +1,41 @@
 export const config = { maxDuration: 30 };
+const KEY = '16671c2193msh3dc96da6f4fdb02p1b2b4bjsn5ce9c99fdb44';
+const HOST = 'tennis-api-atp-wta-itf.p.rapidapi.com';
+const BASE = 'https://' + HOST;
+const H = {'x-rapidapi-key':KEY,'x-rapidapi-host':HOST,'Content-Type':'application/json'};
 
-async function get(url, headers={}) {
-  const r = await fetch(url,{headers:{'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',...headers}});
-  return {status:r.status, body:await r.json().catch(()=>null), text: r.status!==200 ? await r.text().catch(()=>'') : null};
+async function get(path) {
+  const r = await fetch(BASE+path,{headers:H});
+  return {status:r.status, body:await r.json().catch(()=>null)};
 }
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // Test 1: Sofascore with full browser headers
-  const s1 = await get('https://api.sofascore.com/api/v1/search/all?q=Djokovic',{
-    'Accept':'application/json','Accept-Language':'en-US,en;q=0.9',
-    'Origin':'https://www.sofascore.com','Referer':'https://www.sofascore.com/tennis',
-    'Sec-Fetch-Dest':'empty','Sec-Fetch-Mode':'cors','Sec-Fetch-Site':'same-site'
-  });
-  out.sofascore_full_headers = {status:s1.status, has_results:!!s1.body?.results};
+  // 1. Test the provided endpoint
+  const t1 = await get('/tennis/v2/atp/player/tournament-record/68074/21305');
+  out.tournament_record = {status:t1.status, keys:t1.body?Object.keys(t1.body):null, preview:JSON.stringify(t1.body).slice(0,400)};
 
-  // Test 2: ATP Tour player match history (internal JSON API)
-  const s2 = await get('https://www.atptour.com/en/players/novak-djokovic/d643/ajax/match-history-results?year=2025');
-  out.atp_match_history = {status:s2.status, keys:s2.body?Object.keys(s2.body):null, preview:s2.text?.slice(0,200)};
+  // 2. Try player search
+  const t2 = await get('/tennis/v2/atp/player/search/Djokovic');
+  out.search_atp = {status:t2.status, preview:JSON.stringify(t2.body).slice(0,400)};
 
-  // Test 3: ATP stats API
-  const s3 = await get('https://www.atptour.com/en/stats/player-activity-summary/d643/2025/hard/all/all/0');
-  out.atp_stats = {status:s3.status, keys:s3.body?Object.keys(s3.body):null};
+  // 3. Try player recent matches / activity
+  const t3 = await get('/tennis/v2/atp/player/activity/68074');
+  out.player_activity = {status:t3.status, preview:JSON.stringify(t3.body).slice(0,400)};
 
-  // Test 4: AllSportsAPI (has free tier, tennis stats)
-  const s4 = await get('https://apiv2.allsportsapi.com/tennis/?met=Fixtures&APIkey=test&from=2025-01-01&to=2025-01-07');
-  out.allsports = {status:s4.status, sample:JSON.stringify(s4.body).slice(0,200)};
+  // 4. Try player profile
+  const t4 = await get('/tennis/v2/atp/player/68074');
+  out.player_profile = {status:t4.status, preview:JSON.stringify(t4.body).slice(0,300)};
 
-  // Test 5: TheSportsDB (free, no key needed for basic data)
-  const s5 = await get('https://www.thesportsdb.com/api/v1/json/3/searchplayers.php?p=Djokovic');
-  out.sportsdb_search = {status:s5.status, player:s5.body?.player?.[0]?.strPlayer, id:s5.body?.player?.[0]?.idPlayer};
+  // 5. Try player stats
+  const t5 = await get('/tennis/v2/atp/player/stats/68074');
+  out.player_stats = {status:t5.status, preview:JSON.stringify(t5.body).slice(0,400)};
 
-  // If TheSportsDB has player, try event results
-  const sdbId = s5.body?.player?.[0]?.idPlayer;
-  if (sdbId) {
-    const s6 = await get(`https://www.thesportsdb.com/api/v2/json/50130162/eventsplayer.php?id=${sdbId}&s=2024-2025`);
-    out.sportsdb_events = {status:s6.status, count:s6.body?.event?.length, sample:s6.body?.event?.[0]};
-  }
+  // 6. Try WTA search too (PP has both ATP and WTA players)
+  const t6 = await get('/tennis/v2/wta/player/search/Sabalenka');
+  out.search_wta = {status:t6.status, preview:JSON.stringify(t6.body).slice(0,300)};
 
   return res.json(out);
 }
