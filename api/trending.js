@@ -270,10 +270,10 @@ function hitRates(games, fn, line, allowOver=true, allowUnder=true) {
 }
 
 async function fetchPP(leagueId) {
-  const url = `https://api.prizepicks.com/projections?league_id=${leagueId}&per_page=250`;
+  const url = `https://partner-api.prizepicks.com/projections?league_id=${leagueId}&per_page=250`;
   const headers = { Accept:'application/json','User-Agent':UA,'Referer':'https://app.prizepicks.com/' };
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt > 0) await new Promise(r=>setTimeout(r, 1000 * attempt));
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) await new Promise(r=>setTimeout(r, 800 * attempt));
     const r = await fetch(url, { headers });
     if (r.status === 429) continue; // retry after delay
     if (!r.ok) throw new Error(`PrizePicks ${r.status}`);
