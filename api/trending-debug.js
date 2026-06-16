@@ -1,11 +1,13 @@
 export const config = { maxDuration: 20 };
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+const PARTNER = 'https://partner-api.prizepicks.com';
 
-async function check(url, headers={}) {
+async function check(url) {
   try {
-    const r = await fetch(url, {headers:{'User-Agent':UA,...headers}, signal:AbortSignal.timeout(8000)});
+    const r = await fetch(url, {headers:{'User-Agent':UA,Accept:'application/json'}, signal:AbortSignal.timeout(8000)});
     const text = await r.text();
-    return {status:r.status, len:text.length, has_datadome: !!r.headers.get('x-datadome'), preview:text.slice(0,200)};
+    let body; try{body=JSON.parse(text);}catch{body=text.slice(0,200);}
+    return {status:r.status, has_datadome: !!r.headers.get('x-datadome'), body};
   } catch(e) { return {error:e.message}; }
 }
 
@@ -13,20 +15,30 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // 1. The actual board webpage (not the API) - might embed JSON without DataDome blocking it
-  out.board_page = await check('https://app.prizepicks.com/board');
+  // MLB should definitely have active props in mid-June
+  const mlb = await check(`${PARTNER}/projections?league_id=2&per_page=250`);
+  out.mlb_status = mlb.status;
+  out.mlb_has_datadome = mlb.has_datadome;
+  out.mlb_count = mlb.body?.data?.length;
+  out.mlb_sample = mlb.body?.data?.slice(0,2)?.map(p=>({stat:p.attributes?.stat_type, line:p.attributes?.line_score}));
 
-  // 2. PP's public-facing marketing/main site (different infra, possibly no DataDome)
-  out.main_site = await check('https://www.prizepicks.com/');
+  // WNBA - also in season
+  const wnba = await check(`${PARTNER}/projections?league_id=3&per_page=250`);
+  out.wnba_count = wnba.body?.data?.length;
+  out.wnba_status = wnba.status;
 
-  // 3. Try the partner/affiliate API subdomain pattern some sites use
-  out.partner_api = await check('https://partner-api.prizepicks.com/projections?league_id=7&per_page=5');
+  // Tennis
+  const tennis = await check(`${PARTNER}/projections?league_id=5&per_page=250`);
+  out.tennis_count = tennis.body?.data?.length;
+  out.tennis_status = tennis.status;
 
-  // 4. Try without query params - sometimes DataDome rules target specific query patterns
-  out.no_params = await check('https://api.prizepicks.com/projections');
-
-  // 5. Try the leagues endpoint (lighter weight, used earlier in this project for league IDs)
-  out.leagues_endpoint = await check('https://api.prizepicks.com/leagues');
+  // Stress test: 5 rapid calls to partner-api to see if IT rate limits like the main one did
+  const rapid = [];
+  for (let i=0;i<5;i++) {
+    const r = await check(`${PARTNER}/projections?league_id=2&per_page=10`);
+    rapid.push(r.status);
+  }
+  out.rapid_5_partner = rapid;
 
   return res.json(out);
 }
