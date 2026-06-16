@@ -1,26 +1,40 @@
 export const config = { maxDuration: 30 };
-const UA = 'Mozilla/5.0';
-async function get(url, opts={}) {
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+async function tryFetch(headers) {
   try {
-    const r = await fetch(url, {headers:{'User-Agent':UA,...opts.headers}, signal:AbortSignal.timeout(8000)});
-    const text = await r.text();
-    let body; try { body = JSON.parse(text); } catch { body = text.slice(0,300); }
-    return {status:r.status, body};
-  } catch(e) { return {status:0, error:e.message}; }
+    const r = await fetch('https://api.prizepicks.com/projections?league_id=7&per_page=10', {headers, signal:AbortSignal.timeout(7000)});
+    return r.status;
+  } catch(e) { return `ERR:${e.message}`; }
 }
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
   const out = {};
 
-  // 1. Is the trending endpoint itself reachable?
-  const host = req.headers.host;
-  const t = await get(`https://${host}/api/trending?sport=nba&statType=Points&scope=total`);
-  out.trending_self = {status:t.status, preview: typeof t.body==='string'?t.body.slice(0,300):JSON.stringify(t.body).slice(0,300)};
+  // Test 1: 5 rapid calls with current headers (Accept + UA + Referer)
+  const basicHeaders = {Accept:'application/json','User-Agent':UA,'Referer':'https://app.prizepicks.com/'};
+  const rapid = [];
+  for (let i=0;i<5;i++) rapid.push(await tryFetch(basicHeaders));
+  out.rapid_5_calls = rapid;
 
-  // 2. Is PrizePicks reachable at all right now?
-  const pp = await get('https://api.prizepicks.com/projections?league_id=7&per_page=10', {headers:{'Referer':'https://app.prizepicks.com/'}});
-  out.pp_direct = {status:pp.status, preview: typeof pp.body==='string'?pp.body.slice(0,300):JSON.stringify(pp.body).slice(0,300)};
+  // Test 2: fuller browser-like headers (mimics what worked for other sites when blocked)
+  const fullHeaders = {
+    Accept:'application/json, text/plain, */*',
+    'Accept-Language':'en-US,en;q=0.9',
+    'User-Agent':UA,
+    Referer:'https://app.prizepicks.com/',
+    Origin:'https://app.prizepicks.com',
+    'Sec-Fetch-Dest':'empty','Sec-Fetch-Mode':'cors','Sec-Fetch-Site':'same-site',
+  };
+  out.full_headers_status = await tryFetch(fullHeaders);
+
+  // Test 3: a few different league_ids to see if it's global or league-specific
+  out.nfl_status = await tryFetch(basicHeaders); // will reuse since same params, just checking consistency
+  try {
+    const r2 = await fetch('https://api.prizepicks.com/projections?league_id=9&per_page=10',{headers:basicHeaders,signal:AbortSignal.timeout(7000)});
+    out.nfl_league_status = r2.status;
+  } catch(e){ out.nfl_league_status = `ERR:${e.message}`; }
 
   return res.json(out);
 }
