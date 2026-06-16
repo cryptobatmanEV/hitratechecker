@@ -1,32 +1,26 @@
 export const config = { maxDuration: 30 };
 const UA = 'Mozilla/5.0';
-async function get(url) {
+async function get(url, opts={}) {
   try {
-    const r = await fetch(url.replace('http://','https://'),{headers:{'User-Agent':UA},signal:AbortSignal.timeout(7000)});
-    return r.json().catch(()=>null);
-  } catch { return null; }
+    const r = await fetch(url, {headers:{'User-Agent':UA,...opts.headers}, signal:AbortSignal.timeout(8000)});
+    const text = await r.text();
+    let body; try { body = JSON.parse(text); } catch { body = text.slice(0,300); }
+    return {status:r.status, body};
+  } catch(e) { return {status:0, error:e.message}; }
 }
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
+  const out = {};
 
-  // Fetch linescores for Djokovic (id 296) in comp 150053 (2024-10-08)
-  const ls296 = await get('https://sports.core.api.espn.com/v2/sports/tennis/leagues/atp/events/315-2024/competitions/150053/competitors/296/linescores');
-  // Fetch opponent linescores too (id 7602)
-  const ls7602 = await get('https://sports.core.api.espn.com/v2/sports/tennis/leagues/atp/events/315-2024/competitions/150053/competitors/7602/linescores');
+  // 1. Is the trending endpoint itself reachable?
+  const host = req.headers.host;
+  const t = await get(`https://${host}/api/trending?sport=nba&statType=Points&scope=total`);
+  out.trending_self = {status:t.status, preview: typeof t.body==='string'?t.body.slice(0,300):JSON.stringify(t.body).slice(0,300)};
 
-  // Also fetch 3 more competitions to see if linescores are consistent
-  const log = await get('https://sports.core.api.espn.com/v2/sports/tennis/leagues/atp/seasons/2024/athletes/296/eventlog?limit=8');
-  const items = log?.events?.items || [];
-  // Check which items have linescore refs
-  const linescore_check = items.slice(0,5).map(item=>({
-    has_competition: !!item?.competition?.$ref,
-    played: item?.played,
-  }));
+  // 2. Is PrizePicks reachable at all right now?
+  const pp = await get('https://api.prizepicks.com/projections?league_id=7&per_page=10', {headers:{'Referer':'https://app.prizepicks.com/'}});
+  out.pp_direct = {status:pp.status, preview: typeof pp.body==='string'?pp.body.slice(0,300):JSON.stringify(pp.body).slice(0,300)};
 
-  return res.json({
-    djokovic_linescores: ls296,
-    opponent_linescores: ls7602,
-    linescore_check,
-  });
+  return res.json(out);
 }
