@@ -275,6 +275,11 @@ const _ppCache = {}; // leagueId → {data, ts}
 const PP_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// Results cache — caches fully computed trending results per sport+scope.
+// 10-minute TTL: first load does all the work, subsequent loads are instant.
+const _resultsCache = {}; // `${sport}:${scope||''}` → {data, ts}
+const RESULTS_TTL = 10 * 60 * 1000; // 10 minutes
+
 // Dual-endpoint strategy: partner-api (no DataDome) first, fall back to
 // api.prizepicks.com if partner-api returns 429 or errors. Cached responses
 // mean normal usage almost never hits PP more than once per 5 minutes per sport.
@@ -542,9 +547,16 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=300,stale-while-revalidate=60');
 
-  const { sport='nba' } = req.query;
+  const { sport='nba', scope } = req.query;
   const lid = PP_LEAGUE[sport];
   if (!lid) return res.status(400).json({ error:'Unsupported sport' });
+
+  // Check results cache first — avoids re-running all player searches + gamelogs
+  const cacheKey = `${sport}:${scope||''}`;
+  const cachedResult = _resultsCache[cacheKey];
+  if (cachedResult && Date.now() - cachedResult.ts < RESULTS_TTL) {
+    return res.json({ ...cachedResult.data, cached: true });
+  }
 
   const host = req.headers.host;
   const calcs = CALCS[sport];
@@ -677,7 +689,7 @@ export default async function handler(req, res) {
 
     const top20 = results.sort((a,b)=>(b.l10?.pct||0)-(a.l10?.pct||0)).slice(0,20);
     const seenStats=[...new Set(projs.map(p=>p.stat))];
-    return res.json({
+    const payload = {
       sport,
       updated: new Date().toISOString(),
       results: top20,
@@ -692,7 +704,10 @@ export default async function handler(req, res) {
         players_empty_log: Object.entries(logMap).filter(([,l])=>!Array.isArray(l)||!l.length).map(([n])=>n).slice(0,5),
         results_count: results.length,
       }
-    });
+    };
+    // Cache the full result — next request within 10 min returns instantly
+    _resultsCache[cacheKey] = { data: payload, ts: Date.now() };
+    return res.json(payload);
 
   } catch(e) { return res.status(500).json({ error:e.message }); }
 }
