@@ -269,17 +269,42 @@ function hitRates(games, fn, line, allowOver=true, allowUnder=true) {
   return { direction:dir, l5:calc(5,dir), l10:calc(10,dir), l30:calc(30,dir) };
 }
 
+// Module-level PP cache — persists across warm invocations.
+// 5-minute TTL dramatically reduces PP API calls and prevents rate limiting.
+const _ppCache = {}; // leagueId → {data, ts}
+const PP_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Dual-endpoint strategy: partner-api (no DataDome) first, fall back to
+// api.prizepicks.com if partner-api returns 429 or errors. Cached responses
+// mean normal usage almost never hits PP more than once per 5 minutes per sport.
 async function fetchPP(leagueId) {
-  const url = `https://partner-api.prizepicks.com/projections?league_id=${leagueId}&per_page=250`;
+  const cached = _ppCache[leagueId];
+  if (cached && Date.now() - cached.ts < PP_CACHE_TTL) return cached.data;
+
+  const endpoints = [
+    'https://partner-api.prizepicks.com',
+    'https://api.prizepicks.com',
+  ];
   const headers = { Accept:'application/json','User-Agent':UA,'Referer':'https://app.prizepicks.com/' };
-  for (let attempt = 0; attempt < 4; attempt++) {
-    if (attempt > 0) await new Promise(r=>setTimeout(r, 800 * attempt));
-    const r = await fetch(url, { headers });
-    if (r.status === 429) continue; // retry after delay
-    if (!r.ok) throw new Error(`PrizePicks ${r.status}`);
-    return r.json();
+
+  for (const base of endpoints) {
+    const url = `${base}/projections?league_id=${leagueId}&per_page=250`;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await sleep(800 * attempt);
+      try {
+        const r = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+        if (r.status === 429) continue;   // rate limited — retry this endpoint
+        if (r.status === 403) break;       // DataDome/forbidden — try next endpoint
+        if (!r.ok) break;                  // other error — try next endpoint
+        const data = await r.json();
+        _ppCache[leagueId] = { data, ts: Date.now() };
+        return data;
+      } catch { break; }                   // timeout/network — try next endpoint
+    }
   }
-  throw new Error('PrizePicks rate limited — try again in a few seconds');
+
+  throw new Error('PrizePicks unavailable — try again in a few seconds');
 }
 
 // Cache proPlayers for the duration of one trending request
