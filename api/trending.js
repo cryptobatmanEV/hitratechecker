@@ -338,13 +338,18 @@ async function findPlayer(name, sport, host) {
       return d?.id ? d : null;
     }
     if (sport === 'cs2') {
-      // Use existing cs2.js search — same as the CS2 tab
-      const r = await fetch(`https://${host}/api/cs2?action=search&nickname=${encodeURIComponent(name)}`);
-      if (!r.ok) return null;
-      const d = await r.json();
-      const players = Array.isArray(d) ? d : (d.players||[]);
-      const n = norm(name);
-      return players.find(p=>norm(p.name)===n) || players[0] || null;
+      // Use GRID directly — no ScraperAPI needed
+      const safe = name.replace(/"/g,'');
+      for (const filter of [`equals:"${safe}"`, `contains:"${safe}"`]) {
+        try {
+          const d = await cdQ(`{players(filter:{nickname:{${filter}}},first:5){edges{node{id nickname title{id} team{id name}}}}}`);
+          const list = (d?.data?.players?.edges||[]).map(e=>e.node);
+          if (!list.length) continue;
+          const p = list.find(p=>p.title?.id==='28') || list.find(p=>p.title?.id==='1') || list[0];
+          if (p?.team?.id) return { id:p.id, nickname:p.nickname, teamId:p.team.id, teamName:p.team.name };
+        } catch {}
+      }
+      return null;
     }
     if (sport === 'lol') {
       const r = await fetch(`https://${host}/api/lol?action=search&name=${encodeURIComponent(name)}`);
@@ -404,11 +409,35 @@ async function fetchLog(player, sport, host) {
       return Array.isArray(d) ? d : [];
     }
     if (sport === 'cs2') {
-      // Use existing cs2.js gamelog — same as the CS2 tab, uses GRID+HLTV
-      const r = await fetch(`https://${host}/api/cs2?action=gamelog&playerId=${encodeURIComponent(player.id||'')}`);
-      if (!r.ok) return [];
-      const d = await r.json();
-      return Array.isArray(d) ? d : (d.games||[]);
+      // Use GRID series state directly — no ScraperAPI needed
+      if (!player.teamId) return [];
+      const slug = (player.nickname||'').toLowerCase();
+      const ago = new Date(Date.now()-180*86400000).toISOString();
+      try {
+        const seriesData = await cdQ(`{allSeries(filter:{teamIds:{in:["${player.teamId}"]},startTimeScheduled:{gte:"${ago}"}},first:20,orderBy:StartTimeScheduled){edges{node{id startTimeScheduled}}}}`);
+        const ids = (seriesData?.data?.allSeries?.edges||[]).map(e=>e.node?.id).filter(Boolean).slice(0,15);
+        if (!ids.length) return [];
+        const bQ = `{${ids.map((id,i)=>`s${i}:seriesState(id:"${id}"){id startedAt teams{id players{id name kills}} games{sequenceNumber teams{id players{id name kills}}}}`).join(' ')}}`;
+        const stateData = await ssQ(bQ);
+        if (!stateData?.data) return [];
+        const games = [];
+        for (const s of Object.values(stateData.data)) {
+          if (!s) continue;
+          const myTeam = s.teams?.find(t=>t.players?.some(p=>p.name?.toLowerCase().includes(slug)));
+          if (!myTeam) continue;
+          let totalKills = 0;
+          const maps = (s.games||[])
+            .sort((a,b)=>(a.sequenceNumber||0)-(b.sequenceNumber||0))
+            .map(g => {
+              const gt = g.teams?.find(t=>t.id===myTeam.id);
+              const gp = gt?.players?.find(p=>p.name?.toLowerCase().includes(slug));
+              const k = gp?.kills||0; totalKills += k;
+              return { kills: k };
+            });
+          if (maps.length) games.push({ kills:totalKills, maps, _date:(s.startedAt||'').slice(0,10) });
+        }
+        return games;
+      } catch { return []; }
     }
     if (sport === 'mlb') {
       const s = new Date().getFullYear();
