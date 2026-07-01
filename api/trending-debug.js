@@ -1,31 +1,53 @@
-export const config = { maxDuration: 30 };
+export const config = { maxDuration: 25 };
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+
+async function pp(lid) {
+  for (const base of ['https://partner-api.prizepicks.com','https://api.prizepicks.com']) {
+    try {
+      const r = await fetch(`${base}/projections?league_id=${lid}&per_page=10`,
+        {headers:{Accept:'application/json','User-Agent':UA,'Referer':'https://app.prizepicks.com/'},signal:AbortSignal.timeout(6000)});
+      const d = await r.json().catch(()=>null);
+      if (r.ok) return {status:r.status, source:base.includes('partner')?'partner':'main', count:d?.data?.length, sample_stat:d?.data?.[0]?.attributes?.stat_type};
+      if (r.status !== 429 && r.status !== 403) return {status:r.status, source:base};
+    } catch(e) { continue; }
+  }
+  return {status:'all_failed'};
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin','*');
   const host = req.headers.host;
   const out = {};
 
-  // Test partner-api directly for each broken sport's league
-  const PP = 'https://partner-api.prizepicks.com';
-  for (const [name, id] of [['mlb',2],['tennis',5],['lol',121],['dota',174],['cs2',265]]) {
-    try {
-      const r = await fetch(`${PP}/projections?league_id=${id}&per_page=5`,
-        {headers:{Accept:'application/json','User-Agent':'Mozilla/5.0'},signal:AbortSignal.timeout(8000)});
-      const d = await r.json().catch(()=>null);
-      out[`pp_${name}`] = {status:r.status, count:d?.data?.length??'?', meta:d?.meta};
-    } catch(e) { out[`pp_${name}`] = {error:e.message}; }
-  }
+  // 1. PP data for each esports league
+  const [lol, dota, cs2] = await Promise.all([pp(121), pp(174), pp(265)]);
+  out.pp_lol = lol;
+  out.pp_dota = dota;
+  out.pp_cs2 = cs2;
 
-  // Test trending endpoint for each
-  for (const [sport, stat] of [['mlb','Hits'],['tennis','Total Games'],['lol','Kills'],['cs2','Kills'],['dota','Kills']]) {
-    try {
-      const r = await fetch(`https://${host}/api/trending?sport=${sport}&statType=${encodeURIComponent(stat)}&scope=total`,
-        {signal:AbortSignal.timeout(25000)});
-      const text = await r.text();
-      let body; try{body=JSON.parse(text);}catch{body=text.slice(0,200);}
-      out[`trending_${sport}`] = {status:r.status, result:Array.isArray(body)?`${body.length} rows`:body};
-    } catch(e) { out[`trending_${sport}`] = {error:e.message}; }
-  }
+  // 2. Is LoL API itself working?
+  try {
+    const r = await fetch(`https://${host}/api/lol?action=search&q=ShowMaker`,{signal:AbortSignal.timeout(8000)});
+    const d = await r.json().catch(()=>null);
+    const players = Array.isArray(d)?d:(d?.players||[]);
+    out.lol_api = {status:r.status, found:players.length, first:players[0]?.name};
+  } catch(e) { out.lol_api = {error:e.message}; }
+
+  // 3. Is GRID key working for CS2?
+  try {
+    const key = process.env.GRID_API_KEY;
+    out.grid_key_present = !!key;
+    if (key) {
+      const r = await fetch('https://api.grid.gg/central-data/graphql',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},
+        body:JSON.stringify({query:'query{allPlayers(filter:{nickname:{includesInsensitive:"s1mple"}}first:3){nodes{id nickname}}}'}),
+        signal:AbortSignal.timeout(8000)
+      });
+      const d = await r.json().catch(()=>null);
+      out.grid_test = {status:r.status, nodes:d?.data?.allPlayers?.nodes, error:d?.errors?.[0]?.message};
+    }
+  } catch(e) { out.grid_test = {error:e.message}; }
 
   return res.json(out);
 }
