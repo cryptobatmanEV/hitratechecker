@@ -1,6 +1,6 @@
 export const config = { maxDuration: 30 };
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+const UA = 'curl/8.7.1';
 
 async function espnGet(url) {
   const r = await fetch(url.replace('http://', 'https://'), {

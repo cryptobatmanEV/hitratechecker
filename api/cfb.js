@@ -1,6 +1,6 @@
 export const config = { maxDuration: 30 };
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+const UA = 'curl/8.7.1';
 const SPORT  = 'football';
 const LEAGUE = 'college-football';
 
@@ -70,7 +70,7 @@ async function fetchSeasonItems(athleteId, season) {
   if (teamId) {
     try {
       const schedUrl = `https://site.api.espn.com/apis/site/v2/sports/${SPORT}/${LEAGUE}/teams/${teamId}/schedule?season=${season}&seasontype=3`;
-      const r = await fetch(schedUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const r = await fetch(schedUrl, { headers: { 'User-Agent': UA } });
       if (r.ok) {
         const sched = await r.json();
         for (const event of sched.events || []) {

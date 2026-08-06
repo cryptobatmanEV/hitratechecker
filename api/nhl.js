@@ -44,9 +44,8 @@ export default async function handler(req, res) {
   try {
     // ── Search ──────────────────────────────────────────────────────────────
     if (action === 'search') {
-      const lastName = (q || '').split(' ').pop();
-      const cap      = lastName.charAt(0).toUpperCase() + lastName.slice(1);
-      const cayenne  = encodeURIComponent(`seasonId=${SEASON} and lastName="${cap}"`);
+      const lastName = (q || '').split(' ').pop().replace(/'/g, '');
+      const cayenne  = encodeURIComponent(`seasonId=${SEASON} and lastName likeIgnoreCase '%${lastName}%'`);
       const [skaterRes, goalieRes] = await Promise.all([
         fetch(`${STATS_BASE}/skater/summary?limit=5&sort=points&cayenneExp=${cayenne}`, { headers: HEADERS }),
         fetch(`${STATS_BASE}/goalie/summary?limit=5&sort=wins&cayenneExp=${cayenne}`, { headers: HEADERS }),
