@@ -625,7 +625,7 @@ function App(){
   const canCheck=player!=null&&line&&!isNaN(parseFloat(line));
 
   const checkHistory=async(overrideLine)=>{
-    const requestedLine=overrideLine??line;if(!player||!requestedLine||isNaN(parseFloat(requestedLine)))return;
+    const requestedLine=overrideLine??line;if(!player||!requestedLine||isNaN(parseFloat(requestedLine))){setError(!player?"Select a player before checking history.":"Enter a numeric projection line before checking history.");return;}
     if(overrideLine!=null)setLine(String(overrideLine));
     setLoad(true);setError("");setDebug("Fetching data...");
     setGameLog([]);setCarLog([]);setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);
@@ -700,6 +700,12 @@ function App(){
       setDebug("Done.");
     }catch(e){setError(e.message);}
     finally{setLoad(false);}
+  };
+
+  const handleCheckClick=()=>{
+    if(!player){setError("Select a player before checking history.");return;}
+    if(!String(line).trim()||isNaN(parseFloat(line))){setError("Enter a numeric projection line before checking history.");return;}
+    checkHistory();
   };
 
   useEffect(()=>{
@@ -1056,7 +1062,7 @@ function App(){
 
       {error&&<div className="error-box">{error}</div>}
       {!error&&debug&&<div className="debug-box">{debug}</div>}
-      <button className="check-btn" type="button" onClick={checkHistory} disabled={!canCheck||loading} title={!canCheck?"Select a player and enter a numeric projection line":"Check player history"}>{loading?"FETCHING DATA...":"CHECK HISTORY"}</button>
+      <button className="check-btn" type="button" onClick={handleCheckClick} disabled={loading} title="Check player history">{loading?"FETCHING DATA...":"CHECK HISTORY"}</button>
       {!canCheck&&!loading&&<div style={{fontSize:10,color:"rgba(255,255,255,0.35)",textAlign:"center",marginTop:6}}>Select a player and enter a numeric projection line to enable history.</div>}
       {loading&&<div style={{textAlign:"center",padding:"24px 0"}}><div className="spinner"/><div style={{marginTop:10,fontSize:11,color:"rgba(255,255,255,0.3)"}}>Fetching data...</div></div>}
 
