@@ -153,7 +153,7 @@ function nflSeason(y) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store');
-  const { action, q, id, scope } = req.query;
+  const { action, q, id, scope, teamId } = req.query;
 
   try {
     if (action === 'search') {
@@ -171,6 +171,26 @@ export default async function handler(req, res) {
           teamId: p.teamRelationships?.[0]?.core?.id || null,
         }));
       return res.json(results);
+    }
+
+    if (action === 'nextgame') {
+      if (!teamId) return res.json(null);
+      const season = nflSeason(new Date().getFullYear());
+      const data = await espnGet(`https://site.api.espn.com/apis/site/v2/sports/${SPORT}/${LEAGUE}/teams/${encodeURIComponent(teamId)}/schedule?season=${season}`);
+      const now = Date.now();
+      const upcoming = (data.events || [])
+        .map(event => ({ event, comp:event.competitions?.[0] }))
+        .filter(({comp}) => comp && new Date(comp.date || 0).getTime() >= now - 6 * 60 * 60 * 1000)
+        .sort((a,b) => new Date(a.comp.date) - new Date(b.comp.date))[0];
+      if (!upcoming) return res.json(null);
+      const us = (upcoming.comp.competitors || []).find(c => String(c.id) === String(teamId));
+      const opp = (upcoming.comp.competitors || []).find(c => String(c.id) !== String(teamId));
+      if (!us || !opp) return res.json(null);
+      return res.json({
+        opp: opp.team?.abbreviation || opp.team?.displayName || opp.team?.name || '',
+        date: (upcoming.comp.date || upcoming.event.date || '').slice(0, 10),
+        isHome: us.homeAway === 'home',
+      });
     }
 
     if (action === 'gamelog') {

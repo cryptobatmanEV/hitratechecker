@@ -475,6 +475,7 @@ function App(){
   const [ou,setOu]          =useState("over");
   const [h2hIn,setH2hIn]   =useState("");
   const [h2hAct,setH2hAct] =useState("");
+  const [chartMode,setChartMode]=useState("last10");
   const [loading,setLoad]   =useState(false);
   const [error,setError]    =useState("");
   const [debug,setDebug]    =useState("");
@@ -526,7 +527,7 @@ function App(){
   const prizePicksSport=isMLB?'mlb':isNFL?'nfl':isCFB?'cfb':isNHL?'nhl':isWNBA?'wnba':isNBA?'nba':isTennis?'tennis':isES?(esGame==='dota2'?'dota':esGame):null;
   const activeStatLabel=statList[statIdx]?.label||'';
 
-  const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setH2hIn("");setH2hAct("");setOppTmId(null);setOppTm("");setLogPage(0);setWnbaNextOpp(null);};
+  const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setH2hIn("");setH2hAct("");setChartMode("last10");setOppTmId(null);setOppTm("");setLogPage(0);setWnbaNextOpp(null);};
   useEffect(()=>{clearAll();setMapScope("total");setTennisBo(0);},[sport,mlbGrp,esGame]);
   useEffect(()=>{if(isMLB){setGLoad(true);getTodayGames().then(g=>setToday(g)).catch(()=>{}).finally(()=>setGLoad(false));}},[sport]);
   useEffect(()=>{const h=e=>{if(pWrap.current&&!pWrap.current.contains(e.target))setShowPD(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]); 
@@ -594,15 +595,10 @@ function App(){
         }
       }catch(e){}
     }
-    if(isNBA&&p.teamId){
+    if((isNFL||isCFB||isNBA||isWNBA)&&p.teamId){
       try{
-        const ng=await fetch(`/api/nba?action=nextgame&teamId=${encodeURIComponent(p.teamId)}`).then(r=>r.json());
-        if(ng?.opp)setWnbaNextOpp(ng);
-      }catch(e){}
-    }
-    if(isWNBA&&p.teamId){
-      try{
-        const ng=await fetch(`/api/wnba?action=nextgame&teamId=${encodeURIComponent(p.teamId)}`).then(r=>r.json());
+        const route=isNFL?'nfl':isCFB?'cfb':isNBA?'nba':'wnba';
+        const ng=await fetch(`/api/${route}?action=nextgame&teamId=${encodeURIComponent(p.teamId)}`).then(r=>r.json());
         if(ng?.opp)setWnbaNextOpp(ng);
       }catch(e){}
     }
@@ -744,8 +740,6 @@ function App(){
     }catch{return null;}
   };
   const recentG=isMLB?[...gameLog,...carLog]:gameLog;
-  const chartGames=recentG.slice(0,10).reverse();
-  const chartMax=Math.max(lineNum||0,...chartGames.map(g=>Number(getVal(g))||0),1);
   const l5=hasData?hitRate(recentG.slice(0,5),getVal,lineNum,ou):null;
   const l10=hasData?hitRate(recentG.slice(0,10),getVal,lineNum,ou):null;
   const l30=hasData?hitRate(recentG.slice(0,30),getVal,lineNum,ou):null;
@@ -753,11 +747,13 @@ function App(){
   const careerAllG=(isNFL||isCFB||isNHL||isWNBA||isNBA||isMLB)?[...gameLog,...carLog]:carLog;
   const _rawLogGames=(isNFL||isCFB||isNHL||isWNBA||isNBA)?careerAllG:gameLog;
   const logGames=isTennis&&tennisBo?_rawLogGames.filter(g=>g.bestOf===tennisBo):_rawLogGames;
+  const h2hG=hasData&&h2hAct?logGames.filter(g=>(g._opp||"").toLowerCase().includes(h2hAct.toLowerCase())):[];
+  const chartGames=(chartMode==='h2h'&&h2hAct?h2hG:recentG).slice(0,10).reverse();
+  const chartMax=Math.max(lineNum||0,...chartGames.map(g=>Number(getVal(g))||0),1);
   const LOG_PER_PAGE=30;
   const logPageCount=Math.ceil(logGames.length/LOG_PER_PAGE);
   const logSlice=logGames.slice(logPage*LOG_PER_PAGE,(logPage+1)*LOG_PER_PAGE);
   const careerR=careerAllG.length>0?hitRate(careerAllG,getCV,lineNum,ou):null;
-  const h2hG=hasData&&h2hAct?logGames.filter(g=>(g._opp||"").toLowerCase().includes(h2hAct.toLowerCase())):[];
   const h2hR=h2hG.length?hitRate(h2hG,getVal,lineNum,ou):null;
   const splitGames=(isNFL||isCFB||isNHL||isWNBA||isNBA)?[...gameLog,...carLog]:gameLog;
   const homeG=hasData?splitGames.filter(g=>g._isHome):[];
@@ -1042,8 +1038,8 @@ function App(){
 
         <div className="card">
           <div className="sec-title">{playerName} · {statList[statIdx]?.label} {ou==="over"?"Over":"Under"} {lineNum}<span style={{marginLeft:8,fontSize:10,color:"rgba(255,255,255,0.3)",fontWeight:400}}>({logGames.length} games)</span></div>
-          <div className="sec-title" style={{marginTop:16}}>LAST 10 GAMES</div>
-          <div className="last10-chart-shell">
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginTop:16}}><div className="sec-title" style={{margin:0}}>{chartMode==='h2h'&&h2hAct?`H2H · ${h2hAct.toUpperCase()}`:"LAST 10 GAMES"}</div>{chartMode==='h2h'&&<button className="sport-btn" style={{borderRadius:2,padding:"4px 10px",fontSize:10}} onClick={()=>setChartMode("last10")}>SHOW LAST 10</button>}</div>
+          <div className="last10-chart-shell" aria-label={chartMode==='h2h'&&h2hAct?`Head to head games against ${h2hAct}`:`Last 10 games for ${playerName} ${statLabel}`}>
             <div className="last10-axis last10-axis-left" aria-hidden="true"><span>{chartMax}</span><span>{Math.ceil(chartMax/2)}</span><span>0</span></div>
             <div className="last10-chart" aria-label={`Last 10 games for ${playerName} ${statLabel}`}>
               {chartGames.map((game,i)=>{const value=getVal(game);const valid=value!=null&&!Number.isNaN(Number(value));const hit=valid&&(ou==='over'?value>lineNum:value<lineNum);return <div className="last10-bar-wrap" key={i}><div className={`last10-bar ${valid?(hit?'hit':'miss'):''}`} style={{height:`${valid?Math.max(5,Math.min(100,(Number(value)/chartMax)*100)):5}%`}}/><span className="last10-value">{valid?value:' '}</span><span className="last10-label">{(game._date||'').toString().slice(5,10)}</span></div>;})}
@@ -1066,17 +1062,17 @@ function App(){
         {isMLB&&dayNt&&(dayNt.day||dayNt.night)&&(<div className="card"><div className="sec-title">DAY / NIGHT SPLITS · {currentSeason()} Season</div><div style={{display:"flex",gap:8}}><div className="rate-card" style={{flex:1}}><div className="lbl">DAY GAMES</div>{dayNt.day?<><div className="pct" style={{color:"var(--amber)",fontSize:16}}>{dayNt.day.avg||dayNt.day.era||"—"}</div><div className="frac">{dayNt.day.atBats||dayNt.day.inningsPitched||0} {mlbGrp==="hitting"?"AB":"IP"}</div><div className="avg">{mlbGrp==="hitting"?`${dayNt.day.homeRuns||0} HR · ${dayNt.day.strikeOuts||0} K`:`${dayNt.day.strikeOuts||0} K`}</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div><div className="rate-card" style={{flex:1}}><div className="lbl">NIGHT GAMES</div>{dayNt.night?<><div className="pct" style={{color:"var(--info)",fontSize:16}}>{dayNt.night.avg||dayNt.night.era||"—"}</div><div className="frac">{dayNt.night.atBats||dayNt.night.inningsPitched||0} {mlbGrp==="hitting"?"AB":"IP"}</div><div className="avg">{mlbGrp==="hitting"?`${dayNt.night.homeRuns||0} HR · ${dayNt.night.strikeOuts||0} K`:`${dayNt.night.strikeOuts||0} K`}</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div></div></div>)}
         {isMLB&&mlbGrp==="hitting"&&pitcher&&(<div className="vs-card"><div className="vs-title">BATTER VS PITCHER · {playerName} vs {pitcher.name}{pitcherInfo?.pitchHand&&<span className={`pill-tag ${pitcherInfo.pitchHand==="L"?"tag-l":"tag-r"}`}>{pitcherInfo.pitchHand}HP</span>}{platoAdv&&<span className={`pill-tag ${platoAdv.favorable?"tag-good":"tag-bad"}`}>{platoAdv.favorable?"PLATOON ADV":"PLATOON DIS"}</span>}</div>{vsP?<><div className="stat-grid-4"><SB label="AVG" value={vsP.avg||"—"} color="var(--info)"/><SB label="AB" value={vsP.atBats} color="var(--info)"/><SB label="HITS" value={vsP.hits} color="var(--info)"/><SB label="HR" value={vsP.homeRuns} color="var(--info)"/><SB label="RBI" value={vsP.rbi} color="var(--info)"/><SB label="BB" value={vsP.baseOnBalls} color="var(--info)"/><SB label="K" value={vsP.strikeOuts} color="var(--info)"/><SB label="OPS" value={vsP.ops||"—"} color="var(--info)"/></div>{vsPVal!=null&&<div style={{marginTop:8,fontSize:11,color:"rgba(255,255,255,0.5)"}}>Career {statList[statIdx].label} vs {pitcher.name}: <span style={{marginLeft:4,fontWeight:700,color:vsPVal>lineNum?"var(--brand)":"var(--danger)"}}>{vsPVal}</span><span style={{marginLeft:6,fontSize:10,color:vsPVal>lineNum?"var(--brand)":"var(--danger)"}}>({vsPVal>lineNum?"OVER":"UNDER"} {lineNum})</span></div>}</>:<div style={{fontSize:11,color:"rgba(255,255,255,0.3)"}}>No career BVP data found.</div>}</div>)}
 
-        {(isWNBA||isNBA)&&wnbaNextOpp&&wnbaNextOpp.opp&&<div className="card">
+        {(isNFL||isCFB||isWNBA||isNBA)&&wnbaNextOpp&&wnbaNextOpp.opp&&<div className="card">
           <div className="label-sm">NEXT OPPONENT</div>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4}}>
             <div style={{fontSize:13,fontWeight:600,color:"var(--text)"}}>{wnbaNextOpp.isHome?"vs":"@"} {wnbaNextOpp.opp}</div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{wnbaNextOpp.date}</span>
-              <button className="sport-btn active" style={{borderRadius:2,padding:"2px 10px",fontSize:10}} onClick={()=>{setH2hIn(wnbaNextOpp.opp);setH2hAct(wnbaNextOpp.opp);}}>Set H2H</button>
+              <button className={`sport-btn ${chartMode==='h2h'?'active':''}`} style={{borderRadius:2,padding:"2px 10px",fontSize:10}} disabled={!h2hG.length} onClick={()=>{setH2hIn(wnbaNextOpp.opp);setH2hAct(wnbaNextOpp.opp);setChartMode("h2h");}}>{chartMode==='h2h'?"H2H ACTIVE":"VIEW H2H CHART"}</button>
             </div>
           </div>
         </div>}
-        <div className="card"><div className="label-sm">H2H OPPONENT FILTER</div><div style={{display:"flex",gap:8}}><input className="tool-input" type="text" placeholder="Team or opponent name" value={h2hIn} onChange={e=>setH2hIn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&setH2hAct(h2hIn.trim())} style={{flex:1}}/><button className="sport-btn active" style={{flex:"0 0 auto",borderRadius:2,padding:"0 16px"}} onClick={()=>setH2hAct(h2hIn.trim())}>APPLY</button>{h2hAct&&<button className="sport-btn" style={{flex:"0 0 auto",borderRadius:2,padding:"0 12px",color:"var(--danger)",borderColor:"rgba(255,77,77,0.3)"}} onClick={()=>{setH2hAct("");setH2hIn("");}}>CLEAR</button>}</div>{h2hAct&&<div style={{marginTop:8,fontSize:11,color:h2hG.length?"var(--brand)":"rgba(255,77,77,0.7)"}}>{h2hG.length?`${h2hG.length} games vs "${h2hAct}"`:`No games found vs "${h2hAct}"`}</div>}</div>
+        <div className="card"><div className="label-sm">H2H OPPONENT FILTER</div><div style={{display:"flex",gap:8}}><input className="tool-input" type="text" placeholder="Team or opponent name" value={h2hIn} onChange={e=>setH2hIn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&setH2hAct(h2hIn.trim())} style={{flex:1}}/><button className="sport-btn active" style={{flex:"0 0 auto",borderRadius:2,padding:"0 16px"}} onClick={()=>setH2hAct(h2hIn.trim())}>APPLY</button>{h2hAct&&<button className="sport-btn" style={{flex:"0 0 auto",borderRadius:2,padding:"0 12px",color:"var(--danger)",borderColor:"rgba(255,77,77,0.3)"}} onClick={()=>{setH2hAct("");setH2hIn("");setChartMode("last10");}}>CLEAR</button>}</div>{h2hAct&&<div style={{marginTop:8,fontSize:11,color:h2hG.length?"var(--brand)":"rgba(255,77,77,0.7)"}}>{h2hG.length?`${h2hG.length} games vs "${h2hAct}"`:`No games found vs "${h2hAct}"`}</div>}</div>
 
         {isCS2&&(statList[statIdx]?.label==="Headshots"||statList[statIdx]?.label==="HS %")&&<div style={{background:"rgba(255,165,0,0.06)",border:"1px solid rgba(255,165,0,0.2)",borderRadius:4,padding:"10px 14px",fontSize:11,color:"rgba(255,200,100,0.8)",marginBottom:8}}>HS data is sourced from GRID's official broadcast feed. Some events may not be covered. Affected matches show 0. This is a data availability limitation, not a reflection of the player's actual stats.</div>}
         <div className="card"><div className="sec-title">Game Log</div>
