@@ -106,6 +106,12 @@
     .prop-player{font-weight:700;color:var(--text);}.prop-meta{display:block;color:var(--text-muted);font-size:10px;margin-top:2px;}
     .rate-bar{display:inline-block;width:52px;height:4px;margin-left:6px;background:var(--surface-3);border-radius:var(--radius-pill);vertical-align:middle;overflow:hidden;}.rate-bar i{display:block;height:100%;border-radius:inherit;background:currentColor;}
     .direction-pill{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:28px;border-radius:var(--radius-pill);font:700 10px 'IBM Plex Mono',monospace;}.direction-over{color:var(--brand);background:rgba(0,220,110,.1);}.direction-under{color:var(--danger);background:rgba(255,77,77,.1);}
+    .detail-drawer{position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);z-index:40;padding:20px;background:var(--surface-1);border-left:1px solid var(--border);box-shadow:-20px 0 50px rgba(0,0,0,.35);overflow-y:auto;}
+    .drawer-backdrop{position:fixed;inset:0;z-index:35;background:rgba(0,0,0,.56);}
+    .drawer-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:20px;}.drawer-close{min-width:44px;min-height:44px;background:transparent;border:1px solid var(--border);border-radius:var(--radius-control);color:var(--text-secondary);cursor:pointer;}
+    .history-chart{display:flex;align-items:flex-end;gap:5px;height:150px;padding:12px 4px;border-bottom:1px solid var(--border);background:linear-gradient(to top,rgba(255,255,255,.04) 1px,transparent 1px);background-size:100% 25%;}
+    .history-bar{flex:1;min-width:5px;border-radius:4px 4px 0 0;background:var(--danger);position:relative;}.history-bar.hit{background:var(--brand);}.history-bar span{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);font:9px 'IBM Plex Mono',monospace;color:var(--text-secondary);padding-bottom:4px;}
+    .drawer-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0;}.drawer-stat{padding:10px 6px;text-align:center;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-control);}.drawer-stat b{display:block;font:700 18px 'IBM Plex Mono',monospace;color:var(--text);}.drawer-stat span{display:block;margin-top:4px;font-size:9px;color:var(--text-muted);}
     @media (max-width:600px){.board-filters{grid-template-columns:1fr 1fr}.props-table th:nth-child(4),.props-table td:nth-child(4){display:none}.rate-bar{width:36px}}
     .desktop-only{display:block;}
     @media (max-width:900px){.shell-body{grid-template-columns:1fr}.filter-rail{position:static}.desktop-only{display:none}.main-panel{width:100%}.topbar{top:8px}.app-shell{max-width:760px}}
@@ -473,6 +479,7 @@ function App(){
   const [trendWindow,setTrendWindow]=useState('l10');
   const [trendMin,setTrendMin]=useState('0');
   const [trendSort,setTrendSort]=useState('rate');
+  const [selectedTrend,setSelectedTrend]=useState(null);
   const [wnbaNextOpp,setWnbaNextOpp]=useState(null);
   const [carStats,setCarSt] =useState(null);
   const [vsP,setVsP]        =useState(null);
@@ -534,6 +541,7 @@ function App(){
       });
     return()=>controller.abort();
   },[mode,trendSport,trendScope,trendRetry]);
+  useEffect(()=>{const onKey=e=>{if(e.key==='Escape')setSelectedTrend(null);};document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);},[]);
 
   const onSelectPlayer=async p=>{
     setPlayer(p);setGameLog([]);setCarLog([]);setError("");setVsP(null);setVsT(null);setHands(null);setDayNt(null);setCarSt(null);setPitcher(null);setPitchQ("");setPInfo(null);setOppTmId(null);setOppTm("");setWnbaNextOpp(null);
@@ -822,7 +830,7 @@ function App(){
             </div>}
           </div>}
           {trendData.length>0&&<div style={{overflowX:'auto'}}><table className="props-table"><thead><tr><th>Player</th><th>Prop</th><th>Pick</th><th>Sample</th><th><button className="sport-btn" style={{minHeight:28,padding:'2px 7px'}} onClick={()=>setTrendSort(trendSort==='rate'?'player':'rate')}>{trendWindow.toUpperCase()} ↕</button></th><th>Avg</th></tr></thead><tbody>
-            {trendRows.map((item,i)=>{const rate=item[trendWindow]?.pct;const color=rate>=70?'var(--brand)':rate>=50?'var(--amber)':'var(--danger)';return <tr key={`${item.player}-${item.stat}-${i}`}>
+            {trendRows.map((item,i)=>{const rate=item[trendWindow]?.pct;const color=rate>=70?'var(--brand)':rate>=50?'var(--amber)':'var(--danger)';return <tr key={`${item.player}-${item.stat}-${i}`} onClick={()=>setSelectedTrend(item)} onKeyDown={e=>e.key==='Enter'&&setSelectedTrend(item)} tabIndex="0" style={{cursor:'pointer'}}>
               <td><span className="prop-player">{item.player}</span><span className="prop-meta">{item.team||'Team unavailable'}</span></td>
               <td>{item.stat}<span className="prop-meta">Line {item.line}</span></td>
               <td><span className={`direction-pill ${item.direction==='under'?'direction-under':'direction-over'}`}>{item.direction==='under'?'UNDER':'OVER'}</span></td>
@@ -833,6 +841,14 @@ function App(){
           </tbody></table>{trendRows.length===0&&<div style={{padding:'18px 0',color:'var(--text-muted)',fontSize:11}}>No props match these filters.</div>}</div>}
           {trendData.length>0&&<div style={{fontSize:9,color:'rgba(255,255,255,0.2)',marginTop:12}}>Lines pulled from PrizePicks · Updated every 5 min · Hit rate vs actual PP line</div>}
         </div>}
+        {selectedTrend&&<><div className="drawer-backdrop" onClick={()=>setSelectedTrend(null)}/><aside className="detail-drawer" aria-label="Prop detail">
+          <div className="drawer-head"><div><div className="label-sm">PROP DETAIL</div><h2 style={{fontSize:20,lineHeight:1.2}}>{selectedTrend.player}</h2><div style={{color:'var(--text-muted)',fontSize:11,marginTop:4}}>{selectedTrend.team||'Team unavailable'} · {selectedTrend.stat}</div></div><button className="drawer-close" onClick={()=>setSelectedTrend(null)} aria-label="Close prop detail">Close</button></div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}><div style={{fontSize:14,color:'var(--text-secondary)'}}>Line <b className="num" style={{color:'var(--text)'}}>{selectedTrend.line}</b></div><span className={`direction-pill ${selectedTrend.direction==='under'?'direction-under':'direction-over'}`}>{selectedTrend.direction==='under'?'UNDER':'OVER'}</span></div>
+          <div className="drawer-grid">{[['L5',selectedTrend.l5],['L10',selectedTrend.l10],['L30',selectedTrend.l30]].map(([label,data])=><div className="drawer-stat" key={label}><b style={{color:data?.pct>=70?'var(--brand)':data?.pct>=50?'var(--amber)':'var(--danger)'}}>{data?.pct!=null?`${data.pct}%`:' '}</b><span>{label} {data?.hits!=null?`${data.hits} of ${data.total}`:''}</span></div>)}</div>
+          <div className="sec-title">Recent game log</div>
+          {selectedTrend.history?.length?<div className="history-chart" aria-label="Recent game log chart">{selectedTrend.history.slice(0,20).reverse().map((game,i)=><div key={i} className={`history-bar ${game.hit?'hit':''}`} style={{height:`${Math.max(12,Math.min(100,Number(game.value)||0))}%`}} title={`${game.date} ${game.opponent||''}: ${game.value}`}><span>{game.value}</span></div>)}</div>:<div className="debug-box">No game-log values were returned for this prop.</div>}
+          <div style={{marginTop:14,fontSize:10,color:'var(--text-muted)'}}>Green bars cleared the PrizePicks line. Red bars did not. Values come from the returned game log.</div>
+        </aside></>}
       </div>}
 
       {/* ─── CHECK MODE UI ───────────────────────────────────────────────────── */}

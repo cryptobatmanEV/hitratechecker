@@ -713,7 +713,13 @@ export default async function handler(req, res) {
       const statFn = resolveStatFn(sport, proj.stat); if (!statFn) continue;
       const r = hitRates(games, statFn, proj.line, proj.allowOver, proj.allowUnder);
       if (!r?.l10) continue;
-      results.push({ player:proj.name, team:proj.team, stat:proj.stat, line:proj.line, direction:r.direction, l5:r.l5, l10:r.l10, l30:r.l30 });
+      const history = games.slice(0, 30).map(game => {
+        const value = statFn(game);
+        if (value == null || Number.isNaN(Number(value))) return null;
+        const hit = r.direction === 'over' ? value > proj.line : value < proj.line;
+        return { date: game._date || '', opponent: game._opp || '', value, hit };
+      }).filter(Boolean);
+      results.push({ player:proj.name, team:proj.team, stat:proj.stat, line:proj.line, direction:r.direction, l5:r.l5, l10:r.l10, l30:r.l30, history });
     }
 
     const top20 = results.sort((a,b)=>(b.l10?.pct||0)-(a.l10?.pct||0)).slice(0,20);
