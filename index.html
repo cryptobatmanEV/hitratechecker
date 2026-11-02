@@ -424,7 +424,7 @@ function SearchBox({label,placeholder,hint,onSearch,onSelect,selected}){
     <div className="card">
       <div className="label-sm">{label}</div>
       <div className="search-wrap" ref={wrap}>
-        <input id="player-search" className="tool-input" type="text" placeholder={placeholder}
+        <input id="player-search" className="tool-input" type="text" placeholder={placeholder||"Search player last name..."}
           value={q} onChange={e=>onChange(e.target.value)}
           onFocus={()=>results.length>0&&setShow(true)}/>
         {busy&&<div style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)"}}><div className="spinner" style={{width:16,height:16,borderWidth:2}}/></div>}
@@ -471,6 +471,7 @@ function App(){
   const [oppTmName,setOppTm]=useState("");
 
   const [statIdx,setStatIdx]=useState(0);
+  const [statQuery,setStatQuery]=useState("");
   const [line,setLine]      =useState("");
   const [ou,setOu]          =useState("over");
   const [h2hIn,setH2hIn]   =useState("");
@@ -527,8 +528,10 @@ function App(){
   const statList=isMLB?(mlbGrp==="hitting"?HIT_STATS:PIT_STATS):isNFL?NFL_STATS:isCFB?CFB_STATS:isNHL?NHL_STATS:isWNBA?WNBA_STATS:isNBA?NBA_STATS:isTennis?TENNIS_STATS:(ES_STATS[esGame]||ES_STATS.cs2);
   const prizePicksSport=isMLB?'mlb':isNFL?'nfl':isCFB?'cfb':isNHL?'nhl':isWNBA?'wnba':isNBA?'nba':isTennis?'tennis':isES?(esGame==='dota2'?'dota':esGame):null;
   const activeStatLabel=statList[statIdx]?.label||'';
+  useEffect(()=>{setStatQuery(statList[0]?.label||"");},[sport,mlbGrp,esGame]);
+  const chooseStat=value=>{const idx=statList.findIndex(s=>s.label.toLowerCase()===value.trim().toLowerCase());if(idx>=0){setStatIdx(idx);setStatQuery(statList[idx].label);return true;}return false;};
 
-  const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setH2hIn("");setH2hAct("");setChartMode("last10");setChartRange("last10");setOppTmId(null);setOppTm("");setLogPage(0);setWnbaNextOpp(null);};
+  const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setStatQuery(statList[0]?.label||"");setH2hIn("");setH2hAct("");setChartMode("last10");setChartRange("last10");setOppTmId(null);setOppTm("");setLogPage(0);setWnbaNextOpp(null);};
   useEffect(()=>{clearAll();setMapScope("total");setTennisBo(0);},[sport,mlbGrp,esGame]);
   useEffect(()=>{if(isMLB){setGLoad(true);getTodayGames().then(g=>setToday(g)).catch(()=>{}).finally(()=>setGLoad(false));}},[sport]);
   useEffect(()=>{const h=e=>{if(pWrap.current&&!pWrap.current.contains(e.target))setShowPD(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]); 
@@ -967,42 +970,42 @@ function App(){
         label="NBA PLAYER SEARCH"
         hint="Searches all active NBA players · Points · Rebounds · Assists · PRA"
         onSearch={searchNBA}
-        onSelect={p=>setPlayer(p)}
+        onSelect={onSelectPlayer}
         selected={player}
       />}
       {isWNBA&&<SearchBox
         label="WNBA PLAYER SEARCH"
         hint="Searches all active WNBA players · Points · Rebounds · Assists · Steals · Blocks"
         onSearch={searchWNBA}
-        onSelect={p=>setPlayer(p)}
+        onSelect={onSelectPlayer}
         selected={player}
       />}
       {isNHL&&<SearchBox
         label="NHL PLAYER SEARCH"
         hint="Searches all active NHL players · Goals · Assists · Points · Shots"
         onSearch={searchNHL}
-        onSelect={p=>setPlayer(p)}
+        onSelect={onSelectPlayer}
         selected={player}
       />}
       {isNFL&&<SearchBox
         label="NFL PLAYER SEARCH"
         hint="Searches all active NFL players · Pass Yards · Rush Yards · Rec Yards · Receptions · TDs"
         onSearch={searchNFL}
-        onSelect={p=>setPlayer(p)}
+        onSelect={onSelectPlayer}
         selected={player}
       />}
       {isCFB&&<SearchBox
         label="CFB PLAYER SEARCH"
         hint="Searches active college football players · Pass Yards · Rush Yards · Rec Yards · Receptions"
         onSearch={searchCFB}
-        onSelect={p=>setPlayer(p)}
+        onSelect={onSelectPlayer}
         selected={player}
       />}
       {isTennis&&<SearchBox
         label="TENNIS PLAYER SEARCH"
         hint="Searches ATP + WTA players · Total Sets · Total Games · Total Games Won · Total Tie Breaks"
         onSearch={searchTennis}
-        onSelect={p=>setPlayer(p)}
+        onSelect={onSelectPlayer}
         selected={player}
       />}
       {isTennis&&<div className="card"><div className="label-sm">MATCH FORMAT</div><div className="btn-group"><button className={"sport-btn"+(tennisBo===0?" active":"")} onClick={()=>setTennisBo(0)}>ALL</button><button className={"sport-btn"+(tennisBo===3?" active":"")} onClick={()=>setTennisBo(3)}>BO3 ONLY</button><button className={"sport-btn"+(tennisBo===5?" active":"")} onClick={()=>setTennisBo(5)}>BO5 ONLY</button></div><div style={{fontSize:10,color:"rgba(255,255,255,0.35)",marginTop:6}}>Grand Slams (men's) are BO5 · All other events are BO3</div></div>}
@@ -1020,7 +1023,12 @@ function App(){
       )}
 
       {/* Stat + line */}
-      <div className="card"><div className="label-sm">STAT CATEGORY</div><select className="stat-select" value={statIdx} onChange={e=>setStatIdx(parseInt(e.target.value))}>{statList.map((s,i)=><option key={i} value={i}>{s.label}</option>)}</select></div>
+      <div className="card">
+        <div className="label-sm">PROP TYPE SEARCH</div>
+        <input className="tool-input" list="prop-type-options" value={statQuery} placeholder="Type or choose a prop type..." onChange={e=>{setStatQuery(e.target.value);chooseStat(e.target.value);}} onBlur={()=>{if(!chooseStat(statQuery))setStatQuery(activeStatLabel);}} aria-label="Prop type search"/>
+        <datalist id="prop-type-options">{statList.map((s,i)=><option key={i} value={s.label}/>)}</datalist>
+        <div style={{fontSize:10,color:"rgba(255,255,255,0.35)",marginTop:6}}>Choose a listed prop so the correct player stat and graph are loaded.</div>
+      </div>
       
       {isES&&<div className="card"><div className="label-sm">MAP SCOPE</div><select className="stat-select" value={mapScope} onChange={e=>setMapScope(e.target.value)}><option value="total">Full Series (all maps)</option><option value="1+2">Maps 1+2 Combined</option><option value="1">Map 1 Only</option><option value="2">Map 2 Only</option><option value="3">Map 3 Only</option><option value="1+2+3">Maps 1+2+3 Combined</option><option value="4">Map 4 Only</option><option value="5">Map 5 Only</option></select><div style={{fontSize:10,color:"rgba(255,255,255,0.35)",marginTop:6}}>{isLoL?"PrizePicks/Sleeper lines are typically Maps 1+2 Combined or Full Series":isDota?"Dota 2 props are typically per-game (Map 1) or Full Series total":"DFS books typically prop Maps 1+2 Combined or Map 1 for CS2"}<br/><span style={{opacity:0.5}}>— means no data for that map scope (series didn't reach it)</span></div></div>}
       {player&&<div className="pp-line-card"><div><div className="label-sm" style={{marginBottom:4,color:'var(--brand)'}}>PRIZEPICKS LINE</div>{ppLineLoad?<small>Checking current PrizePicks projections...</small>:ppLine?<><strong>{ppLine.line}</strong><small>{ppLine.stat} · {ppLine.direction} · {ppLine.team||'Team unavailable'}</small></>:<small>{ppLineErr||'No current PrizePicks line found for this player and stat.'}</small>}</div>{ppLine&&<button className="sport-btn active" onClick={()=>setLine(String(ppLine.line))}>USE LINE</button>}</div>}
