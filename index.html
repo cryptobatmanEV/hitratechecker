@@ -445,10 +445,33 @@ function SearchBox({label,placeholder,hint,onSearch,onSelect,selected}){
 }
 
 // ── Main App ──────────────────────────────────────────────────────────────────
+const GLOBAL_SEARCH_SOURCES=[
+  {sport:'NBA',search:searchNBA,stats:NBA_STATS},{sport:'WNBA',search:searchWNBA,stats:WNBA_STATS},
+  {sport:'NFL',search:searchNFL,stats:NFL_STATS},{sport:'CFB',search:searchCFB,stats:CFB_STATS},
+  {sport:'NHL',search:searchNHL,stats:NHL_STATS},{sport:'MLB',search:searchMLB,stats:[...HIT_STATS,...PIT_STATS]},
+  {sport:'TENNIS',search:searchTennis,stats:TENNIS_STATS}
+];
+const GLOBAL_PROP_ALIASES={
+  'Pass Yards':['passing yards','passing yard','pass yds'],'Rush Yards':['rushing yards','rushing yard','rush yds'],
+  'Rec Yards':['receiving yards','receiving yard','rec yds'],'Pass Attempts':['passing attempts','pass att'],
+  'Pass Completions':['passing completions','pass cmp'],'Carries':['rush attempts','rushing attempts'],
+  'Receptions':['reception'],'Points':['point'],'Rebounds':['rebound'],'Assists':['assist'],
+  'Steals':['steal'],'Blocks':['block'],'3-Pointers':['three pointers','3 pointers','three point field goals'],
+  'Turnovers':['turnover'],'Goals':['goal'],'Shots on Goal':['shots','shots on goal']
+};
+function globalPropMatch(text,stats){
+  const candidates=stats.flatMap(s=>[s.label,...(GLOBAL_PROP_ALIASES[s.label]||[])].map(phrase=>({label:s.label,phrase})))
+    .filter(x=>text.toLowerCase().includes(x.phrase.toLowerCase())).sort((a,b)=>b.phrase.length-a.phrase.length);
+  return candidates[0]||null;
+}
+
 function App(){
   const [sport,setSport]    =useState("MLB");
   const [navTab,setNavTab]  =useState(new URLSearchParams(location.search).get('tab')||'check');
   const [globalQ,setGlobalQ]=useState('');
+  const [globalSearchBusy,setGlobalSearchBusy]=useState(false);
+  const [globalSearchErr,setGlobalSearchErr]=useState('');
+  const [globalPending,setGlobalPending]=useState(null);
   const [quickSearchPending,setQuickSearchPending]=useState(false);
   const [quickOpen,setQuickOpen]=useState(false);
   const [mlbGrp,setMlbGrp] =useState("hitting");
@@ -535,12 +558,19 @@ function App(){
   const activeStatLabel=statList[statIdx]?.label||'';
   useEffect(()=>{setStatQuery(statList[0]?.label||"");},[sport,mlbGrp,esGame]);
   const chooseStat=value=>{const idx=statList.findIndex(s=>s.label.toLowerCase()===value.trim().toLowerCase());if(idx>=0){setStatIdx(idx);setStatQuery(statList[idx].label);return true;}return false;};
-  const submitGlobalSearch=()=>{
-    let query=globalQ.trim();if(!query)return;
-    const aliases=[['passing yards','Pass Yards'],['passing yard','Pass Yards'],['pass yards','Pass Yards'],['rush attempts','Carries'],['rushing yards','Rush Yards'],['rush yards','Rush Yards'],['receiving yards','Rec Yards'],['rec yards','Rec Yards'],['pass completions','Pass Completions'],['pass attempts','Pass Attempts']];
-    const lower=query.toLowerCase();const found=aliases.find(([phrase])=>lower.includes(phrase))||statList.map(s=>[s.label,s.label]).find(([phrase])=>lower.includes(phrase.toLowerCase()));
-    if(found){chooseStat(found[1]);query=query.replace(new RegExp(found[0],'i'),'').replace(/\s+/g,' ').trim();}
-    setGlobalQ(query);setChartRange("last10");setChartMode("last10");setQuickSearchPending(true);selectNav('check');window.setTimeout(()=>window.dispatchEvent(new CustomEvent('propscope:global-search',{detail:{query,autoSelect:true}})),50);
+  const submitGlobalSearch=async()=>{
+    const raw=globalQ.trim();if(!raw||globalSearchBusy)return;
+    setGlobalSearchErr('');setGlobalSearchBusy(true);
+    const matches=GLOBAL_SEARCH_SOURCES.flatMap(source=>{const m=globalPropMatch(raw,source.stats);return m?[{...source,match:m}]:[]});
+    if(!matches.length){setGlobalSearchErr('Include a player last name and prop type, such as “Mahomes Pass Attempts”.');setGlobalSearchBusy(false);return;}
+    const bestPhrase=matches.slice().sort((a,b)=>b.match.phrase.length-a.match.phrase.length)[0].match.phrase;
+    const playerQuery=raw.replace(new RegExp(bestPhrase,'i'),'').replace(/\s+/g,' ').trim();
+    if(!playerQuery){setGlobalSearchErr('Add a player last name before the prop type.');setGlobalSearchBusy(false);return;}
+    const results=await Promise.allSettled(matches.map(async source=>({source,players:await source.search(playerQuery)})));
+    const found=results.find(r=>r.status==='fulfilled'&&r.value.players?.length);
+    if(!found){setGlobalSearchErr(`No player found for “${playerQuery}”. Try the last name and prop type again.`);setGlobalSearchBusy(false);return;}
+    const {source,players}=found.value;const playerResult={...players[0],_globalSport:source.sport};
+    setGlobalQ(`${playerResult.name} ${source.match.label}`);setGlobalPending({player:playerResult,sport:source.sport,stat:source.match.label});setSport(source.sport);setChartRange('last10');setChartMode('last10');selectNav('check');setGlobalSearchBusy(false);
   };
 
   const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setStatQuery(statList[0]?.label||"");setH2hIn("");setH2hAct("");setChartMode("last10");setChartRange("last10");setQuickSearchPending(false);setQuickOpen(false);setOppTmId(null);setOppTm("");setLogPage(0);setWnbaNextOpp(null);};
@@ -619,6 +649,12 @@ function App(){
       }catch(e){}
     }
   };
+
+  useEffect(()=>{
+    if(!globalPending||sport!==globalPending.sport)return;
+    const {player:foundPlayer,stat}=globalPending;
+    setGlobalPending(null);chooseStat(stat);setQuickSearchPending(true);onSelectPlayer(foundPlayer);
+  },[globalPending,sport]);
 
   const handlePitcherQ=v=>{setPitchQ(v);setPitcher(null);setPInfo(null);setVsP(null);clearTimeout(pTimer.current);if(v.length<2){setPitchR([]);setShowPD(false);return;}pTimer.current=setTimeout(async()=>{setPB(true);try{const r=await searchMLB(v);setPitchR(r);setShowPD(true);}catch(e){}finally{setPB(false);}},400);};
   const selectPitcher=async p=>{setPitcher(p);setPitchQ(p.name);setShowPD(false);setPitchR([]);setVsP(null);try{const i=await getPlayerInfo(p.id);setPInfo(i);}catch(e){}};
@@ -836,7 +872,8 @@ function App(){
         <div className="wordmark">PROP<span style={{color:"var(--brand)"}}>SCOPE</span></div>
         <div className="global-search" style={{position:"relative"}}>
           <kbd>/</kbd>
-          <input ref={globalSearchRef} value={globalQ} onChange={e=>setGlobalQ(e.target.value)} placeholder="Search player + prop (e.g. Mahomes Passing Yards)" aria-label="Global player and prop search" onKeyDown={e=>e.key==='Enter'&&submitGlobalSearch()}/>
+          <input ref={globalSearchRef} value={globalQ} onChange={e=>{setGlobalQ(e.target.value);setGlobalSearchErr('');}} placeholder="Search player + prop (e.g. Mahomes Passing Yards)" aria-label="Global player and prop search" onKeyDown={e=>e.key==='Enter'&&submitGlobalSearch()}/>
+          {globalSearchErr&&<div style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,zIndex:50,padding:"8px 10px",background:"var(--surface-1)",border:"1px solid rgba(255,77,77,.35)",borderRadius:4,color:"var(--danger)",fontSize:10}}>{globalSearchErr}</div>}
         </div>
         <nav className="topbar-nav" aria-label="Primary navigation">
           <button className={navTab==='props'?'active':''} onClick={()=>selectNav('props')}>Props</button>
