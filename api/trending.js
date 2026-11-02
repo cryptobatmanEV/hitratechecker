@@ -587,7 +587,12 @@ export default async function handler(req, res) {
     return res.json({ ...cachedResult.data, cached: true });
   }
 
-  const host = req.headers.host;
+    const requestHost = req.headers.host || '';
+    // Preview deployments cannot reliably self-call their ephemeral hostname.
+    // Keep local development local, and use the stable project host elsewhere.
+    const host = requestHost.includes('localhost') || requestHost.startsWith('127.0.0.1')
+      ? requestHost
+      : 'hitrate.vercel.app';
   const calcs = CALCS[sport];
   if (!calcs) return res.status(400).json({ error:'No stat config for sport' });
 
