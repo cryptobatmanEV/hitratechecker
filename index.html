@@ -85,6 +85,22 @@
     .hint-box{margin-top:8px;font-size:10px;color:rgba(255,255,255,0.3);line-height:1.6;}
     .skeleton{background:linear-gradient(90deg,var(--surface-1) 25%,var(--surface-2) 50%,var(--surface-1) 75%);background-size:200% 100%;animation:skeleton 1.2s ease-in-out infinite;border-radius:var(--radius-control);}
     @keyframes skeleton{to{background-position:-200% 0;}}
+    .app-shell{width:100%;max-width:1180px;}
+    .topbar{display:flex;align-items:center;gap:16px;min-height:56px;margin-bottom:16px;padding:10px 12px;background:rgba(13,17,20,.92);border:1px solid var(--border);border-radius:var(--radius-card);position:sticky;top:12px;z-index:20;backdrop-filter:blur(14px);}
+    .wordmark{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;letter-spacing:-.4px;white-space:nowrap;}
+    .global-search{flex:1;min-width:160px;max-width:420px;}
+    .global-search input{width:100%;min-height:40px;padding:8px 12px 8px 36px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-control);color:var(--text);font-family:'Inter',sans-serif;font-size:13px;}
+    .global-search kbd{position:absolute;left:12px;top:50%;transform:translateY(-50%);font:11px 'IBM Plex Mono',monospace;color:var(--text-muted);}
+    .topbar-nav{display:flex;gap:4px;margin-left:auto;}
+    .topbar-nav button{min-height:40px;padding:8px 12px;background:transparent;border:1px solid transparent;border-radius:var(--radius-control);color:var(--text-secondary);cursor:pointer;font-size:12px;}
+    .topbar-nav button.active{background:rgba(0,220,110,.1);border-color:rgba(0,220,110,.28);color:var(--brand);}
+    .shell-body{display:grid;grid-template-columns:240px minmax(0,1fr);gap:16px;align-items:start;}
+    .filter-rail{position:sticky;top:84px;}
+    .main-panel{min-width:0;}
+    .mobile-tabs{display:none;}
+    .desktop-only{display:block;}
+    @media (max-width:900px){.shell-body{grid-template-columns:1fr}.filter-rail{position:static}.desktop-only{display:none}.main-panel{width:100%}.topbar{top:8px}.app-shell{max-width:760px}}
+    @media (max-width:600px){body{font-size:13px}.topbar{gap:8px;padding:8px;top:0;border-radius:0 0 var(--radius-card) var(--radius-card);margin:0 -8px 12px}.wordmark{font-size:16px}.global-search{max-width:none}.topbar-nav{display:none}.mobile-tabs{position:sticky;display:grid;grid-template-columns:repeat(3,1fr);gap:4px;bottom:0;z-index:30;margin:16px -8px -8px;padding:8px;background:rgba(13,17,20,.96);border-top:1px solid var(--border);backdrop-filter:blur(14px)}.mobile-tabs button{min-height:44px;background:transparent;border:1px solid transparent;border-radius:var(--radius-control);color:var(--text-secondary);font-size:11px}.mobile-tabs button.active{color:var(--brand);background:rgba(0,220,110,.1);border-color:rgba(0,220,110,.28)}.card{padding:14px}.stat-grid-4{grid-template-columns:repeat(2,1fr)}}
     @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important;}}
   </style>
 </head>
@@ -398,6 +414,8 @@ function SearchBox({label,placeholder,hint,onSearch,onSelect,selected}){
 // ── Main App ──────────────────────────────────────────────────────────────────
 function App(){
   const [sport,setSport]    =useState("MLB");
+  const [navTab,setNavTab]  =useState(new URLSearchParams(location.search).get('tab')||'check');
+  const [globalQ,setGlobalQ]=useState('');
   const [mlbGrp,setMlbGrp] =useState("hitting");
   const [esGame,setEsGame]  =useState("cs2");
   const [mapScope,setMapScope]=useState("total"); // "total"|"1"|"2"|"3"|"4"|"5"|"1+2"|"1+2+3"
@@ -449,6 +467,7 @@ function App(){
   const [dayNt,setDayNt]    =useState(null);
 
   const pWrap=useRef(null),pTimer=useRef(null);
+  const globalSearchRef=useRef(null);
 
   const isMLB=sport==="MLB";
   const isNHL=sport==="NHL";
@@ -471,6 +490,15 @@ function App(){
   useEffect(()=>{const h=e=>{if(pWrap.current&&!pWrap.current.contains(e.target))setShowPD(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]); 
   // Reset scope when sport changes (not on every fetch)
   useEffect(()=>{setTrendScope(null);},[trendSport]);
+  useEffect(()=>{
+    const onKey=e=>{if(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){e.preventDefault();globalSearchRef.current?.focus();}};
+    document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);
+  },[]);
+  useEffect(()=>{
+    const params=new URLSearchParams(location.search);params.set('tab',navTab);params.set('sport',sport);
+    history.replaceState(null,'',`${location.pathname}?${params.toString()}`);
+  },[navTab,sport]);
+  const selectNav=tab=>{setNavTab(tab);if(tab==='props'){setMode('trending');}else if(tab==='check'){setMode('check');}};
   // Fetch trending data when mode, sport, or scope changes
   useEffect(()=>{
     if(mode!=='trending') return;
@@ -688,24 +716,47 @@ function App(){
   const playerName=player?.name||"";
 
   return(
-    <div style={{minHeight:"100vh",background:"var(--bg)",backgroundImage:"radial-gradient(ellipse at 20% 0%,rgba(0,200,100,0.05) 0%,transparent 50%)",padding:"24px 16px",display:"flex",justifyContent:"center"}}>
-    <div style={{width:"100%",maxWidth:600}}>
+    <div style={{minHeight:"100vh",background:"var(--bg)",backgroundImage:"radial-gradient(ellipse at 20% 0%,rgba(0,200,100,0.05) 0%,transparent 50%)",padding:"12px 16px 24px",display:"flex",justifyContent:"center"}}>
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="wordmark">PROP<span style={{color:"var(--brand)"}}>SCOPE</span></div>
+        <div className="global-search" style={{position:"relative"}}>
+          <kbd>/</kbd>
+          <input ref={globalSearchRef} value={globalQ} onChange={e=>setGlobalQ(e.target.value)} placeholder="Search player or prop" aria-label="Global search" onKeyDown={e=>{if(e.key==='Enter'&&globalQ.trim()){selectNav('check');}}}/>
+        </div>
+        <nav className="topbar-nav" aria-label="Primary navigation">
+          <button className={navTab==='props'?'active':''} onClick={()=>selectNav('props')}>Props</button>
+          <button className={navTab==='check'?'active':''} onClick={()=>selectNav('check')}>Check Player</button>
+          <button className={navTab==='saved'?'active':''} onClick={()=>selectNav('saved')}>Saved</button>
+        </nav>
+      </header>
 
-      <div style={{marginBottom:24,textAlign:"center"}}>
+      <div className="shell-body">
+        <aside className="filter-rail desktop-only">
+          <div className="card">
+            <div className="label-sm">WORKSPACE</div>
+            <div style={{fontSize:12,color:"var(--text-secondary)",lineHeight:1.6}}>Fast prop research from PrizePicks lines and ESPN game logs.</div>
+            <div className="hint-box">Use the sport controls to switch data sources. Filters and saved props arrive in the board phase.</div>
+          </div>
+        </aside>
+        <main className="main-panel">
+        <div style={{width:"100%",maxWidth:760,margin:"0 auto"}}>
+
+      <div style={{marginBottom:16,textAlign:"center"}}>
         <div style={{fontFamily:"'Syne',sans-serif",fontSize:24,fontWeight:800,letterSpacing:"-0.5px"}}>PROP<span style={{color:"var(--brand)"}}>SCOPE</span></div>
         <div style={{marginTop:6,fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:"2px"}}>THE +EV CAVE · ULTIMATE PROP RESEARCH TOOL</div>
       </div>
 
       {/* Sport */}
-      <div className="card"><div className="label-sm">SPORT</div><div style={{display:"flex",flexWrap:"wrap",gap:4}}><button className={"sport-btn"+(mode==="trending"?" active":"")} style={{flex:"1 1 auto",background:mode==="trending"?"rgba(255,200,0,0.15)":"transparent",borderColor:mode==="trending"?"var(--amber)":"rgba(255,255,255,0.1)",color:mode==="trending"?"var(--amber)":"rgba(255,255,255,0.4)"}} onClick={()=>setMode(mode==="trending"?"check":"trending")}>📈 TRENDING</button>
-          <button className={"sport-btn"+(sport==="MLB"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>{setMode("check");setSport("MLB");}}>⚾ MLB</button><button className={"sport-btn"+(sport==="NFL"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("NFL")}>🏈 NFL</button><button className={"sport-btn"+(sport==="CFB"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("CFB")}>🎓 CFB</button><button className={"sport-btn"+(sport==="NHL"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("NHL")}>🏒 NHL</button><button className={"sport-btn"+(sport==="WNBA"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("WNBA")}>🏀 WNBA</button><button className={"sport-btn"+(sport==="NBA"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("NBA")}>🏀 NBA</button><button className={"sport-btn"+(sport==="TENNIS"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("TENNIS")}>🎾 TENNIS</button><button className={"sport-btn"+(sport==="ESPORTS"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("ESPORTS")}>🎮 ESPORTS</button></div></div>
+      <div className="card"><div className="label-sm">SPORT</div><div style={{display:"flex",flexWrap:"wrap",gap:4}}><button className={"sport-btn"+(mode==="trending"?" active":"")} style={{flex:"1 1 auto",background:mode==="trending"?"rgba(255,200,0,0.15)":"transparent",borderColor:mode==="trending"?"var(--amber)":"rgba(255,255,255,0.1)",color:mode==="trending"?"var(--amber)":"rgba(255,255,255,0.4)"}} onClick={()=>setMode(mode==="trending"?"check":"trending")}>TRENDING</button>
+          <button className={"sport-btn"+(sport==="MLB"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>{setMode("check");setSport("MLB");}}>MLB</button><button className={"sport-btn"+(sport==="NFL"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("NFL")}>NFL</button><button className={"sport-btn"+(sport==="CFB"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("CFB")}>CFB</button><button className={"sport-btn"+(sport==="NHL"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("NHL")}>NHL</button><button className={"sport-btn"+(sport==="WNBA"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("WNBA")}>WNBA</button><button className={"sport-btn"+(sport==="NBA"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("NBA")}>NBA</button><button className={"sport-btn"+(sport==="TENNIS"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("TENNIS")}>TENNIS</button><button className={"sport-btn"+(sport==="ESPORTS"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("ESPORTS")}>ESPORTS</button></div></div>
 
       {/* ─── TRENDING VIEW ──────────────────────────────────────────────────── */}
       {mode==='trending'&&<div>
         <div className="card">
           <div className="label-sm">TRENDING — SELECT SPORT</div>
           <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
-            {[['nba','🏀 NBA'],['wnba','🏀 WNBA'],['nfl','🏈 NFL'],['mlb','⚾ MLB'],['nhl','🏒 NHL'],['tennis','🎾 Tennis'],['lol','🗡️ LoL'],['dota','🛡️ Dota'],['cs2','🔫 CS2']].map(([k,lbl])=>(
+            {[['nba','NBA'],['wnba','WNBA'],['nfl','NFL'],['mlb','MLB'],['nhl','NHL'],['tennis','Tennis'],['lol','LoL'],['dota','Dota'],['cs2','CS2']].map(([k,lbl])=>(
               <button key={k} className={'sport-btn'+(trendSport===k?' active':'')}
                 style={{flex:'1 0 calc(33% - 4px)'}}
                 onClick={()=>setTrendSport(k)}>{lbl}</button>
@@ -735,7 +786,7 @@ function App(){
           <button className="sport-btn" style={{marginTop:8}} onClick={()=>setTrendRetry(v=>v+1)}>TRY AGAIN</button>
         </div>}
         {trendData&&<div className="card">
-          <div className="sec-title" style={{marginBottom:12}}>🔥 {trendSport.toUpperCase()} — Top Trending Props · Sorted by L10%</div>
+          <div className="sec-title" style={{marginBottom:12}}>{trendSport.toUpperCase()}: Top Trending Props · Sorted by L10%</div>
           {trendData.length===0&&<div style={{color:'rgba(255,255,255,0.3)',fontSize:11}}>
             No matching props were returned for today. Try another sport or scope.
             {trendDebug&&<div style={{marginTop:6,fontSize:10}}>
@@ -941,7 +992,7 @@ function App(){
         </div>}
         <div className="card"><div className="label-sm">H2H OPPONENT FILTER</div><div style={{display:"flex",gap:8}}><input className="tool-input" type="text" placeholder="Team or opponent name" value={h2hIn} onChange={e=>setH2hIn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&setH2hAct(h2hIn.trim())} style={{flex:1}}/><button className="sport-btn active" style={{flex:"0 0 auto",borderRadius:2,padding:"0 16px"}} onClick={()=>setH2hAct(h2hIn.trim())}>APPLY</button>{h2hAct&&<button className="sport-btn" style={{flex:"0 0 auto",borderRadius:2,padding:"0 12px",color:"var(--danger)",borderColor:"rgba(255,77,77,0.3)"}} onClick={()=>{setH2hAct("");setH2hIn("");}}>CLEAR</button>}</div>{h2hAct&&<div style={{marginTop:8,fontSize:11,color:h2hG.length?"var(--brand)":"rgba(255,77,77,0.7)"}}>{h2hG.length?`${h2hG.length} games vs "${h2hAct}"`:`No games found vs "${h2hAct}"`}</div>}</div>
 
-        {isCS2&&(statList[statIdx]?.label==="Headshots"||statList[statIdx]?.label==="HS %")&&<div style={{background:"rgba(255,165,0,0.06)",border:"1px solid rgba(255,165,0,0.2)",borderRadius:4,padding:"10px 14px",fontSize:11,color:"rgba(255,200,100,0.8)",marginBottom:8}}>⚠️ HS data is sourced from GRID's official broadcast feed. Due to licensing agreements, some events may not be covered — affected matches will show 0. This is a data availability limitation, not a reflection of the player's actual stats.</div>}
+        {isCS2&&(statList[statIdx]?.label==="Headshots"||statList[statIdx]?.label==="HS %")&&<div style={{background:"rgba(255,165,0,0.06)",border:"1px solid rgba(255,165,0,0.2)",borderRadius:4,padding:"10px 14px",fontSize:11,color:"rgba(255,200,100,0.8)",marginBottom:8}}>HS data is sourced from GRID's official broadcast feed. Some events may not be covered. Affected matches show 0. This is a data availability limitation, not a reflection of the player's actual stats.</div>}
         <div className="card"><div className="sec-title">Game Log</div>
           {logSlice.map((game,i)=>{
             const val=getVal(game);const hit=val!=null&&!isNaN(val)&&(ou==="over"?val>lineNum:val<lineNum);const isH2H=h2hAct&&(game._opp||"").toLowerCase().includes(h2hAct.toLowerCase());
@@ -964,7 +1015,16 @@ function App(){
 
       <div style={{marginTop:12,textAlign:"center",fontSize:10,color:"rgba(255,255,255,0.12)",letterSpacing:"1px",paddingBottom:24}}>THE +EV CAVE · PAID MEMBER TOOL · NOT FINANCIAL ADVICE</div>
     </div>}{/* end check mode */}
-    </div></div>
+        </div>
+        </main>
+      </div>
+      <nav className="mobile-tabs" aria-label="Mobile navigation">
+        <button className={navTab==='props'?'active':''} onClick={()=>selectNav('props')}>Props</button>
+        <button className={navTab==='check'?'active':''} onClick={()=>selectNav('check')}>Check Player</button>
+        <button className={navTab==='saved'?'active':''} onClick={()=>selectNav('saved')}>Saved</button>
+      </nav>
+    </div>
+    </div>
   );
 }
 
