@@ -592,7 +592,7 @@ function App(){
   useEffect(()=>{const onKey=e=>{if(e.key==='Escape')setSelectedTrend(null);};document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);},[]);
 
   const onSelectPlayer=async p=>{
-    setPlayer(p);setGameLog([]);setCarLog([]);setError("");setVsP(null);setVsT(null);setHands(null);setDayNt(null);setCarSt(null);setPitcher(null);setPitchQ("");setPInfo(null);setOppTmId(null);setOppTm("");setWnbaNextOpp(null);setChartMode("last10");setChartRange("last10");setQuickSearchPending(false);setQuickOpen(false);
+    setPlayer(p);setGameLog([]);setCarLog([]);setError("");setVsP(null);setVsT(null);setHands(null);setDayNt(null);setCarSt(null);setPitcher(null);setPitchQ("");setPInfo(null);setOppTmId(null);setOppTm("");setWnbaNextOpp(null);setChartMode("last10");setChartRange("last10");if(!quickSearchPending)setQuickOpen(false);
     if(isMLB&&todayGames.length>0){
       try{
         const info=await getPlayerInfo(p.id);const tid=info.teamId;
