@@ -9,6 +9,8 @@
 - Phase 4: added row selection and a detail drawer. Trending now returns the recent values it already fetched so the drawer can render hit and miss history without another data source.
 - Phase 5: added half-point line steppers and quick line controls to Check a Player.
 - Phase 7: added local-only saved props and a slim source and disclaimer footer.
+- Follow-up: added sport/stat-aware quick-line presets, a PrizePicks line lookup card with an explicit Use Line action, a last-10 game-log bar chart, and global player search routing into Check a Player.
+- Follow-up: fixed Trending player-log matching on Vercel preview deployments by using the stable production API host for the internal cross-route lookup while preserving localhost behavior.
 
 ## Intentionally left alone
 
@@ -22,6 +24,7 @@
 - The inline React source passes Babel JSX parsing with optional chaining and nullish coalescing enabled.
 - `git diff --check` passes.
 - Each implementation phase is isolated in its own commit.
+- Review-branch verification: the latest preview loaded Trending NBA rows, displayed PrizePicks lines, and loaded Shai Gilgeous-Alexander's 10-game bar chart plus paginated game log.
 
 The temporary local browser preview could not reach the development server from the browser sandbox, so the required 390px, 768px, and 1280px screenshots were not captured in this run. No screenshot is represented as complete.
 
@@ -36,3 +39,5 @@ Each phase can be reverted by reverting its commit, newest first if rolling back
 - Phase 2: `ce88b17`
 - Phase 1: `3dac3e6`
 - Phase 0: `f3321ac`
+- Follow-up line/chart work: `83e4f6b`
+- Trending preview host fix: `c4102e6`
