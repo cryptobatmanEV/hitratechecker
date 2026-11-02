@@ -4,26 +4,37 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>PropScope | The +EV Cave</title>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <style>
+    :root{
+      --bg:#07090B;--surface-1:#0D1114;--surface-2:#12181C;--surface-3:#182026;
+      --border:rgba(255,255,255,0.07);--brand:#00DC6E;--danger:#FF4D4D;--amber:#FFC800;--info:#5B8CFF;
+      --text:#F2F5F7;--text-secondary:rgba(242,245,247,0.62);--text-muted:rgba(242,245,247,0.38);
+      --space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:24px;
+      --radius-control:8px;--radius-card:10px;--radius-pill:999px;--ease-out:cubic-bezier(.2,.8,.2,1);
+    }
     *{margin:0;padding:0;box-sizing:border-box;}
-    body{background:#0a0d0f;font-family:'IBM Plex Mono',monospace;color:#fff;}
-    .card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:2px;padding:16px 20px;margin-bottom:12px;}
+    html{background:var(--bg);}
+    body{background:var(--bg);font-family:'Inter',sans-serif;color:var(--text);font-size:14px;line-height:1.45;}
+    button,input,select{font:inherit;}
+    button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--brand);outline-offset:2px;}
+    .num,.rate-card .pct,.mini-stat .mv{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;}
+    .card{background:var(--surface-1);border:1px solid var(--border);border-radius:var(--radius-card);padding:16px 20px;margin-bottom:12px;}
     .label-sm{font-size:10px;color:rgba(255,255,255,0.3);letter-spacing:2px;margin-bottom:12px;}
-    .tool-input{width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:2px;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:13px;padding:12px 16px;outline:none;transition:all .15s;}
+    .tool-input{width:100%;background:var(--surface-2);border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-control);color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:13px;padding:12px 16px;outline:none;transition:all .15s var(--ease-out);}
     .tool-input:focus{border-color:rgba(0,220,110,0.5);background:rgba(0,220,110,0.04);}
     .tool-input::placeholder{color:rgba(255,255,255,0.25);}
-    .stat-select{width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:2px;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:12px;padding:12px 16px;outline:none;cursor:pointer;appearance:none;}
-    .stat-select option{background:#141a1f;}
-    .dropdown{position:absolute;top:100%;left:0;right:0;z-index:100;background:#141a1f;border:1px solid rgba(0,220,110,0.25);border-top:none;border-radius:0 0 2px 2px;max-height:240px;overflow-y:auto;}
+    .stat-select{width:100%;background:var(--surface-2);border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-control);color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:12px;padding:12px 16px;outline:none;cursor:pointer;appearance:none;}
+    .stat-select option{background:var(--surface-2);}
+    .dropdown{position:absolute;top:100%;left:0;right:0;z-index:100;background:var(--surface-2);border:1px solid rgba(0,220,110,0.25);border-top:none;border-radius:0 0 var(--radius-control) var(--radius-control);max-height:240px;overflow-y:auto;}
     .dropdown-item{padding:10px 16px;cursor:pointer;font-size:12px;color:rgba(255,255,255,0.7);border-bottom:1px solid rgba(255,255,255,0.04);}
     .dropdown-item:hover,.dropdown-item:active{background:rgba(0,220,110,0.1);color:#00dc6e;}
     .dropdown-item .sub{font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px;}
     .search-wrap{position:relative;}
-    .sport-btn{padding:8px 13px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:rgba(255,255,255,0.4);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;transition:all .15s;letter-spacing:1px;font-weight:600;border-radius:4px;white-space:nowrap;}
+    .sport-btn{min-height:44px;padding:8px 13px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:rgba(255,255,255,0.4);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;transition:all .15s var(--ease-out);letter-spacing:1px;font-weight:600;border-radius:var(--radius-control);white-space:nowrap;}
     .sport-btn.active{background:rgba(0,220,110,0.15);border-color:#00dc6e;color:#00dc6e;}
     .btn-group{display:flex;}.btn-group .sport-btn{border-radius:0;flex:1;}.btn-group .sport-btn:first-child{border-radius:2px 0 0 2px;}.btn-group .sport-btn:last-child{border-radius:0 2px 2px 0;border-left:none;}.btn-group .sport-btn:not(:first-child){border-left:none;}
     .ou-btn{flex:1;padding:9px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:rgba(255,255,255,0.4);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;font-weight:700;}
@@ -31,9 +42,9 @@
     .ou-btn:last-child{border-radius:0 2px 2px 0;border-left:none;}
     .ou-over.active{background:rgba(0,220,110,0.15);border-color:#00dc6e;color:#00dc6e;}
     .ou-under.active{background:rgba(255,77,77,0.12);border-color:#ff4d4d;color:#ff6b6b;}
-    .check-btn{width:100%;padding:14px;background:#00dc6e;color:#0a0d0f;border:none;border-radius:2px;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer;margin-bottom:12px;}
+    .check-btn{width:100%;min-height:44px;padding:14px;background:var(--brand);color:var(--bg);border:none;border-radius:var(--radius-control);font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer;margin-bottom:12px;}
     .check-btn:disabled{background:rgba(0,220,110,0.25);cursor:not-allowed;color:rgba(0,0,0,0.4);}
-    .rate-card{flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:2px;padding:12px 8px;text-align:center;min-width:0;}
+    .rate-card{flex:1;background:var(--surface-1);border:1px solid var(--border);border-radius:var(--radius-card);padding:12px 8px;text-align:center;min-width:0;}
     .rate-card .lbl{font-size:9px;color:rgba(255,255,255,0.3);letter-spacing:1.5px;margin-bottom:5px;}
     .rate-card .pct{font-size:20px;font-family:'Syne',sans-serif;font-weight:800;}
     .rate-card .frac{font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px;}
@@ -72,6 +83,9 @@
     .streak-box{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:2px;padding:6px 12px;font-size:11px;font-weight:700;}
     .trend-up{color:#00dc6e;} .trend-down{color:#ff6b6b;} .trend-flat{color:rgba(255,255,255,0.4);}
     .hint-box{margin-top:8px;font-size:10px;color:rgba(255,255,255,0.3);line-height:1.6;}
+    .skeleton{background:linear-gradient(90deg,var(--surface-1) 25%,var(--surface-2) 50%,var(--surface-1) 75%);background-size:200% 100%;animation:skeleton 1.2s ease-in-out infinite;border-radius:var(--radius-control);}
+    @keyframes skeleton{to{background-position:-200% 0;}}
+    @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important;}}
   </style>
 </head>
 <body>
@@ -314,15 +328,15 @@ async function getRiotLog(game,puuid,routing,platform,scope){const params=`actio
 // ── Calc ──────────────────────────────────────────────────────────────────────
   function hitRate(games,fn,line,ou){const vals=games.map(fn).filter(v=>v!=null&&!isNaN(v));if(!vals.length)return null;const hits=vals.filter(v=>ou==="over"?v>line:v<line).length;return{rate:Math.round(hits/vals.length*100),hits,total:vals.length,avg:Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10)/10};}
 function calcStreak(games,fn,line,ou){let s=0;for(const g of games){const v=fn(g);if(v==null||isNaN(v))break;if(ou==="over"?v>line:v<line)s++;else break;}return s;}
-function rateColor(r){return r>=65?"#00dc6e":r>=50?"#ffc800":"#ff6b6b";}
+function rateColor(r){return r>=65?"var(--brand)":r>=50?"var(--amber)":"var(--danger)";}
 function rateCls(r){return r>=65?"rate-hot":r>=50?"rate-mid":"rate-cold";}
 
 function RateCard({label,data,empty,blue,gold}){
   const cls=blue?"rate-blue":gold?"rate-gold":(data?rateCls(data.rate):"rate-grey");
-  const color=blue?"#80a8ff":gold?"#ffc800":(data?rateColor(data.rate):"rgba(255,255,255,0.2)");
+  const color=blue?"var(--info)":gold?"var(--amber)":(data?rateColor(data.rate):"rgba(255,255,255,0.2)");
   return(<div className={`rate-card ${cls}`}><div className="lbl">{label}</div>{data?<><div className="pct" style={{color}}>{data.rate}%</div><div className="frac">{data.hits}/{data.total}</div><div className="avg">avg {data.avg}</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>{empty||"—"}</div>}</div>);
 }
-function SB({label,value,color}){return(<div className="mini-stat"><div className="ml">{label}</div><div className="mv" style={{color:color||"#fff"}}>{(value!=null&&value!==""&&value!==undefined)?value:"—"}</div></div>);}
+function SB({label,value,color}){return(<div className="mini-stat"><div className="ml">{label}</div><div className="mv" style={{color:color||"var(--text)"}}>{(value!=null&&value!==""&&value!==undefined)?value:"—"}</div></div>);}
 function formatTime(iso){try{return new Date(iso).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",timeZoneName:"short"});}catch{return "";}}
 
 // ── Reusable search box ───────────────────────────────────────────────────────
@@ -374,8 +388,8 @@ function SearchBox({label,placeholder,hint,onSearch,onSelect,selected}){
           </div>
         )}
       </div>
-      {selected&&<div style={{marginTop:8,fontSize:11,color:"#00dc6e"}}>✓ {selected.name}{selected.sub&&<span style={{color:"rgba(255,255,255,0.4)"}}> · {selected.sub}</span>}</div>}
-      {searchErr&&!selected&&<div style={{marginTop:8,fontSize:10,color:"#ff6b6b"}}>{searchErr}</div>}
+      {selected&&<div style={{marginTop:8,fontSize:11,color:"var(--brand)"}}>✓ {selected.name}{selected.sub&&<span style={{color:"rgba(255,255,255,0.4)"}}> · {selected.sub}</span>}</div>}
+      {searchErr&&!selected&&<div style={{marginTop:8,fontSize:10,color:"var(--danger)"}}>{searchErr}</div>}
       {hint&&<div className="hint-box">{hint}</div>}
     </div>
   );
@@ -674,16 +688,16 @@ function App(){
   const playerName=player?.name||"";
 
   return(
-    <div style={{minHeight:"100vh",background:"#0a0d0f",backgroundImage:"radial-gradient(ellipse at 20% 0%,rgba(0,200,100,0.05) 0%,transparent 50%)",padding:"24px 16px",display:"flex",justifyContent:"center"}}>
+    <div style={{minHeight:"100vh",background:"var(--bg)",backgroundImage:"radial-gradient(ellipse at 20% 0%,rgba(0,200,100,0.05) 0%,transparent 50%)",padding:"24px 16px",display:"flex",justifyContent:"center"}}>
     <div style={{width:"100%",maxWidth:600}}>
 
       <div style={{marginBottom:24,textAlign:"center"}}>
-        <div style={{fontFamily:"'Syne',sans-serif",fontSize:24,fontWeight:800,letterSpacing:"-0.5px"}}>PROP<span style={{color:"#00dc6e"}}>SCOPE</span></div>
+        <div style={{fontFamily:"'Syne',sans-serif",fontSize:24,fontWeight:800,letterSpacing:"-0.5px"}}>PROP<span style={{color:"var(--brand)"}}>SCOPE</span></div>
         <div style={{marginTop:6,fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:"2px"}}>THE +EV CAVE · ULTIMATE PROP RESEARCH TOOL</div>
       </div>
 
       {/* Sport */}
-      <div className="card"><div className="label-sm">SPORT</div><div style={{display:"flex",flexWrap:"wrap",gap:4}}><button className={"sport-btn"+(mode==="trending"?" active":"")} style={{flex:"1 1 auto",background:mode==="trending"?"rgba(255,200,0,0.15)":"transparent",borderColor:mode==="trending"?"#ffc800":"rgba(255,255,255,0.1)",color:mode==="trending"?"#ffc800":"rgba(255,255,255,0.4)"}} onClick={()=>setMode(mode==="trending"?"check":"trending")}>📈 TRENDING</button>
+      <div className="card"><div className="label-sm">SPORT</div><div style={{display:"flex",flexWrap:"wrap",gap:4}}><button className={"sport-btn"+(mode==="trending"?" active":"")} style={{flex:"1 1 auto",background:mode==="trending"?"rgba(255,200,0,0.15)":"transparent",borderColor:mode==="trending"?"var(--amber)":"rgba(255,255,255,0.1)",color:mode==="trending"?"var(--amber)":"rgba(255,255,255,0.4)"}} onClick={()=>setMode(mode==="trending"?"check":"trending")}>📈 TRENDING</button>
           <button className={"sport-btn"+(sport==="MLB"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>{setMode("check");setSport("MLB");}}>⚾ MLB</button><button className={"sport-btn"+(sport==="NFL"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("NFL")}>🏈 NFL</button><button className={"sport-btn"+(sport==="CFB"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("CFB")}>🎓 CFB</button><button className={"sport-btn"+(sport==="NHL"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("NHL")}>🏒 NHL</button><button className={"sport-btn"+(sport==="WNBA"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("WNBA")}>🏀 WNBA</button><button className={"sport-btn"+(sport==="NBA"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("NBA")}>🏀 NBA</button><button className={"sport-btn"+(sport==="TENNIS"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("TENNIS")}>🎾 TENNIS</button><button className={"sport-btn"+(sport==="ESPORTS"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("ESPORTS")}>🎮 ESPORTS</button></div></div>
 
       {/* ─── TRENDING VIEW ──────────────────────────────────────────────────── */}
@@ -731,9 +745,9 @@ function App(){
             </div>}
           </div>}
           {trendData.map((item,i)=>{
-            const l10c=item.l10?.pct>=70?'#00dc6e':item.l10?.pct>=50?'#ffc800':'#ff4d4d';
-            const l5c=item.l5?.pct>=70?'#00dc6e':item.l5?.pct>=50?'#ffc800':'#ff4d4d';
-            const l30c=item.l30?.pct>=70?'#00dc6e':item.l30?.pct>=50?'#ffc800':'#ff4d4d';
+            const l10c=item.l10?.pct>=70?'var(--brand)':item.l10?.pct>=50?'var(--amber)':'var(--danger)';
+            const l5c=item.l5?.pct>=70?'var(--brand)':item.l5?.pct>=50?'var(--amber)':'var(--danger)';
+            const l30c=item.l30?.pct>=70?'var(--brand)':item.l30?.pct>=50?'var(--amber)':'var(--danger)';
             return(<div key={i} style={{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
                 <div>
@@ -742,7 +756,7 @@ function App(){
                 </div>
                 <div style={{textAlign:'right',fontSize:11}}>
                   <span style={{color:'rgba(255,255,255,0.5)'}}>{item.stat}</span>
-                  <span style={{color:item.direction==='under'?'#ff6b6b':'#00dc6e',marginLeft:6,fontWeight:700}}>{item.direction==='under'?'U':'O'} {item.line}</span>
+                  <span style={{color:item.direction==='under'?'var(--danger)':'var(--brand)',marginLeft:6,fontWeight:700}}>{item.direction==='under'?'U':'O'} {item.line}</span>
                 </div>
               </div>
               <div style={{display:'flex',gap:16,fontSize:10}}>
@@ -772,7 +786,7 @@ function App(){
           <button className={"sport-btn"+(showGames?" active":"")} style={{width:"100%",borderRadius:2,marginBottom:showGames?10:0}} onClick={()=>setShowG(!showGames)}>{gLoad?"LOADING GAMES...":(showGames?"HIDE MATCHUPS":"SHOW TODAY'S MATCHUPS + PROBABLE PITCHERS")}</button>
           {showGames&&!gLoad&&(todayGames.length===0?<div style={{fontSize:11,color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"10px 0"}}>No games today.</div>
             :<div style={{marginTop:4}}><div style={{fontSize:10,color:"rgba(255,255,255,0.3)",marginBottom:8}}>Click a side to auto-fill the opposing pitcher</div>
-              {todayGames.map(game=>(<div key={game.id} className="game-card"><div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:12,fontWeight:600}}>{game.awayAbbr} @ {game.homeAbbr}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.3)"}}>{formatTime(game.time)}</span></div><div style={{display:"flex",gap:12,flexWrap:"wrap"}}><span style={{fontSize:11,cursor:"pointer",color:selGame?.game?.id===game.id&&selGame?.side==="away"?"#00dc6e":"rgba(255,255,255,0.5)",textDecoration:"underline"}} onClick={()=>selectGame(game,"away")}>{game.awayAbbr} batting vs {game.homePitcher?game.homePitcher.name:"TBD"}</span><span style={{fontSize:11,cursor:"pointer",color:selGame?.game?.id===game.id&&selGame?.side==="home"?"#00dc6e":"rgba(255,255,255,0.5)",textDecoration:"underline"}} onClick={()=>selectGame(game,"home")}>{game.homeAbbr} batting vs {game.awayPitcher?game.awayPitcher.name:"TBD"}</span></div></div>))}
+              {todayGames.map(game=>(<div key={game.id} className="game-card"><div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:12,fontWeight:600}}>{game.awayAbbr} @ {game.homeAbbr}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.3)"}}>{formatTime(game.time)}</span></div><div style={{display:"flex",gap:12,flexWrap:"wrap"}}><span style={{fontSize:11,cursor:"pointer",color:selGame?.game?.id===game.id&&selGame?.side==="away"?"var(--brand)":"rgba(255,255,255,0.5)",textDecoration:"underline"}} onClick={()=>selectGame(game,"away")}>{game.awayAbbr} batting vs {game.homePitcher?game.homePitcher.name:"TBD"}</span><span style={{fontSize:11,cursor:"pointer",color:selGame?.game?.id===game.id&&selGame?.side==="home"?"var(--brand)":"rgba(255,255,255,0.5)",textDecoration:"underline"}} onClick={()=>selectGame(game,"home")}>{game.homeAbbr} batting vs {game.awayPitcher?game.awayPitcher.name:"TBD"}</span></div></div>))}
             </div>)}
         </div>
       )}
@@ -875,7 +889,7 @@ function App(){
             {pitchBusy&&<div style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)"}}><div className="spinner" style={{width:16,height:16,borderWidth:2}}/></div>}
             {showPD&&pitchRes.length>0&&(<div className="dropdown">{pitchRes.map(p=>(<div key={p.id} className="dropdown-item" onMouseDown={()=>selectPitcher(p)}><div>{p.name}</div>{p.sub&&<div className="sub">{p.sub}</div>}</div>))}</div>)}
           </div>
-          {pitcher&&<div style={{marginTop:8,fontSize:11,color:"#00dc6e"}}>✓ {pitcher.name}{pitcherInfo?.pitchHand&&<span className={`pill-tag ${pitcherInfo.pitchHand==="L"?"tag-l":"tag-r"}`}>{pitcherInfo.pitchHand}HP</span>}{platoAdv&&<span className={`pill-tag ${platoAdv.favorable?"tag-good":"tag-bad"}`}>{platoAdv.favorable?"PLATOON ADV":"PLATOON DIS"}</span>}</div>}
+          {pitcher&&<div style={{marginTop:8,fontSize:11,color:"var(--brand)"}}>✓ {pitcher.name}{pitcherInfo?.pitchHand&&<span className={`pill-tag ${pitcherInfo.pitchHand==="L"?"tag-l":"tag-r"}`}>{pitcherInfo.pitchHand}HP</span>}{platoAdv&&<span className={`pill-tag ${platoAdv.favorable?"tag-good":"tag-bad"}`}>{platoAdv.favorable?"PLATOON ADV":"PLATOON DIS"}</span>}</div>}
         </div>
       )}
 
@@ -894,7 +908,7 @@ function App(){
       {hasData&&!loading&&(<>
 
         <div className="card"><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
-          <div><div style={{fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:"1.5px",marginBottom:4}}>CURRENT STREAK</div><div className="streak-box">{streak>0?<><span style={{color:"#00dc6e"}}>{streak}</span><span style={{color:"rgba(255,255,255,0.5)",fontSize:10}}>consecutive {ou==="over"?"overs":"unders"}</span></>:<span style={{color:"#ff6b6b"}}>0 · streak ended</span>}</div></div>
+          <div><div style={{fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:"1.5px",marginBottom:4}}>CURRENT STREAK</div><div className="streak-box">{streak>0?<><span style={{color:"var(--brand)"}}>{streak}</span><span style={{color:"rgba(255,255,255,0.5)",fontSize:10}}>consecutive {ou==="over"?"overs":"unders"}</span></>:<span style={{color:"var(--danger)"}}>0 · streak ended</span>}</div></div>
           <div><div style={{fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:"1.5px",marginBottom:4}}>TREND (L5 vs L10)</div><div className="streak-box"><span className={trendCls}>{trendLbl||"—"}</span>{l5&&l10&&<span style={{fontSize:10,color:"rgba(255,255,255,0.3)",marginLeft:4}}>{l5.rate}% vs {l10.rate}%</span>}</div></div>
         </div></div>
 
@@ -909,23 +923,23 @@ function App(){
           </div>
         </div>
 
-        {isMLB&&carStats&&(<div className="career-card"><div className="ct">CAREER STATS · All Time</div><div className="stat-grid-4">{mlbGrp==="hitting"?<><SB label="AVG" value={carStats.avg||"—"} color="#ffc800"/><SB label="OPS" value={carStats.ops||"—"} color="#ffc800"/><SB label="HR" value={carStats.homeRuns} color="#ffc800"/><SB label="RBI" value={carStats.rbi} color="#ffc800"/><SB label="HITS" value={carStats.hits} color="#ffc800"/><SB label="BB" value={carStats.baseOnBalls} color="#ffc800"/><SB label="K" value={carStats.strikeOuts} color="#ffc800"/><SB label="SB" value={carStats.stolenBases} color="#ffc800"/></>:<><SB label="ERA" value={carStats.era||"—"} color="#ffc800"/><SB label="WHIP" value={carStats.whip||"—"} color="#ffc800"/><SB label="K" value={carStats.strikeOuts} color="#ffc800"/><SB label="W" value={carStats.wins} color="#ffc800"/><SB label="IP" value={carStats.inningsPitched||"—"} color="#ffc800"/><SB label="BB" value={carStats.baseOnBalls} color="#ffc800"/><SB label="HR" value={carStats.homeRuns} color="#ffc800"/><SB label="ER" value={carStats.earnedRuns} color="#ffc800"/></>}</div></div>)}
-        {isMLB&&isPit&&vsT&&(<div className="vs-card"><div className="vs-title">PITCHER VS {oppTmName.toUpperCase()||"OPPOSING TEAM"} · Career</div><div className="stat-grid-4"><SB label="K" value={vsT.strikeOuts} color="#80a8ff"/><SB label="HITS" value={vsT.hits} color="#80a8ff"/><SB label="BB" value={vsT.baseOnBalls} color="#80a8ff"/><SB label="HR" value={vsT.homeRuns} color="#80a8ff"/></div></div>)}
-        {isMLB&&mlbGrp==="hitting"&&hands&&(hands.vsL||hands.vsR)&&(<div className="card"><div className="sec-title">HANDEDNESS SPLITS · {currentSeason()} Season</div><div style={{display:"flex",gap:8}}><div className="rate-card rate-blue" style={{flex:1}}><div className="lbl">VS LHP{pitcherInfo?.pitchHand==="L"&&<span style={{marginLeft:4,color:"#80a8ff"}}>← TODAY</span>}</div>{hands.vsL?<><div className="pct" style={{color:"#80a8ff",fontSize:16}}>{hands.vsL.avg||"—"}</div><div className="frac">{hands.vsL.atBats||0} AB</div><div className="avg">{hands.vsL.homeRuns||0} HR · {hands.vsL.strikeOuts||0} K</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div><div className="rate-card rate-blue" style={{flex:1}}><div className="lbl">VS RHP{pitcherInfo?.pitchHand==="R"&&<span style={{marginLeft:4,color:"#80a8ff"}}>← TODAY</span>}</div>{hands.vsR?<><div className="pct" style={{color:"#80a8ff",fontSize:16}}>{hands.vsR.avg||"—"}</div><div className="frac">{hands.vsR.atBats||0} AB</div><div className="avg">{hands.vsR.homeRuns||0} HR · {hands.vsR.strikeOuts||0} K</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div></div></div>)}
-        {isMLB&&dayNt&&(dayNt.day||dayNt.night)&&(<div className="card"><div className="sec-title">DAY / NIGHT SPLITS · {currentSeason()} Season</div><div style={{display:"flex",gap:8}}><div className="rate-card" style={{flex:1}}><div className="lbl">DAY GAMES</div>{dayNt.day?<><div className="pct" style={{color:"#ffc800",fontSize:16}}>{dayNt.day.avg||dayNt.day.era||"—"}</div><div className="frac">{dayNt.day.atBats||dayNt.day.inningsPitched||0} {mlbGrp==="hitting"?"AB":"IP"}</div><div className="avg">{mlbGrp==="hitting"?`${dayNt.day.homeRuns||0} HR · ${dayNt.day.strikeOuts||0} K`:`${dayNt.day.strikeOuts||0} K`}</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div><div className="rate-card" style={{flex:1}}><div className="lbl">NIGHT GAMES</div>{dayNt.night?<><div className="pct" style={{color:"#a0b4ff",fontSize:16}}>{dayNt.night.avg||dayNt.night.era||"—"}</div><div className="frac">{dayNt.night.atBats||dayNt.night.inningsPitched||0} {mlbGrp==="hitting"?"AB":"IP"}</div><div className="avg">{mlbGrp==="hitting"?`${dayNt.night.homeRuns||0} HR · ${dayNt.night.strikeOuts||0} K`:`${dayNt.night.strikeOuts||0} K`}</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div></div></div>)}
-        {isMLB&&mlbGrp==="hitting"&&pitcher&&(<div className="vs-card"><div className="vs-title">BATTER VS PITCHER · {playerName} vs {pitcher.name}{pitcherInfo?.pitchHand&&<span className={`pill-tag ${pitcherInfo.pitchHand==="L"?"tag-l":"tag-r"}`}>{pitcherInfo.pitchHand}HP</span>}{platoAdv&&<span className={`pill-tag ${platoAdv.favorable?"tag-good":"tag-bad"}`}>{platoAdv.favorable?"PLATOON ADV":"PLATOON DIS"}</span>}</div>{vsP?<><div className="stat-grid-4"><SB label="AVG" value={vsP.avg||"—"} color="#80a8ff"/><SB label="AB" value={vsP.atBats} color="#80a8ff"/><SB label="HITS" value={vsP.hits} color="#80a8ff"/><SB label="HR" value={vsP.homeRuns} color="#80a8ff"/><SB label="RBI" value={vsP.rbi} color="#80a8ff"/><SB label="BB" value={vsP.baseOnBalls} color="#80a8ff"/><SB label="K" value={vsP.strikeOuts} color="#80a8ff"/><SB label="OPS" value={vsP.ops||"—"} color="#80a8ff"/></div>{vsPVal!=null&&<div style={{marginTop:8,fontSize:11,color:"rgba(255,255,255,0.5)"}}>Career {statList[statIdx].label} vs {pitcher.name}: <span style={{marginLeft:4,fontWeight:700,color:vsPVal>lineNum?"#00dc6e":"#ff6b6b"}}>{vsPVal}</span><span style={{marginLeft:6,fontSize:10,color:vsPVal>lineNum?"#00dc6e":"#ff6b6b"}}>({vsPVal>lineNum?"OVER":"UNDER"} {lineNum})</span></div>}</>:<div style={{fontSize:11,color:"rgba(255,255,255,0.3)"}}>No career BVP data found.</div>}</div>)}
+        {isMLB&&carStats&&(<div className="career-card"><div className="ct">CAREER STATS · All Time</div><div className="stat-grid-4">{mlbGrp==="hitting"?<><SB label="AVG" value={carStats.avg||"—"} color="var(--amber)"/><SB label="OPS" value={carStats.ops||"—"} color="var(--amber)"/><SB label="HR" value={carStats.homeRuns} color="var(--amber)"/><SB label="RBI" value={carStats.rbi} color="var(--amber)"/><SB label="HITS" value={carStats.hits} color="var(--amber)"/><SB label="BB" value={carStats.baseOnBalls} color="var(--amber)"/><SB label="K" value={carStats.strikeOuts} color="var(--amber)"/><SB label="SB" value={carStats.stolenBases} color="var(--amber)"/></>:<><SB label="ERA" value={carStats.era||"—"} color="var(--amber)"/><SB label="WHIP" value={carStats.whip||"—"} color="var(--amber)"/><SB label="K" value={carStats.strikeOuts} color="var(--amber)"/><SB label="W" value={carStats.wins} color="var(--amber)"/><SB label="IP" value={carStats.inningsPitched||"—"} color="var(--amber)"/><SB label="BB" value={carStats.baseOnBalls} color="var(--amber)"/><SB label="HR" value={carStats.homeRuns} color="var(--amber)"/><SB label="ER" value={carStats.earnedRuns} color="var(--amber)"/></>}</div></div>)}
+        {isMLB&&isPit&&vsT&&(<div className="vs-card"><div className="vs-title">PITCHER VS {oppTmName.toUpperCase()||"OPPOSING TEAM"} · Career</div><div className="stat-grid-4"><SB label="K" value={vsT.strikeOuts} color="var(--info)"/><SB label="HITS" value={vsT.hits} color="var(--info)"/><SB label="BB" value={vsT.baseOnBalls} color="var(--info)"/><SB label="HR" value={vsT.homeRuns} color="var(--info)"/></div></div>)}
+        {isMLB&&mlbGrp==="hitting"&&hands&&(hands.vsL||hands.vsR)&&(<div className="card"><div className="sec-title">HANDEDNESS SPLITS · {currentSeason()} Season</div><div style={{display:"flex",gap:8}}><div className="rate-card rate-blue" style={{flex:1}}><div className="lbl">VS LHP{pitcherInfo?.pitchHand==="L"&&<span style={{marginLeft:4,color:"var(--info)"}}>← TODAY</span>}</div>{hands.vsL?<><div className="pct" style={{color:"var(--info)",fontSize:16}}>{hands.vsL.avg||"—"}</div><div className="frac">{hands.vsL.atBats||0} AB</div><div className="avg">{hands.vsL.homeRuns||0} HR · {hands.vsL.strikeOuts||0} K</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div><div className="rate-card rate-blue" style={{flex:1}}><div className="lbl">VS RHP{pitcherInfo?.pitchHand==="R"&&<span style={{marginLeft:4,color:"var(--info)"}}>← TODAY</span>}</div>{hands.vsR?<><div className="pct" style={{color:"var(--info)",fontSize:16}}>{hands.vsR.avg||"—"}</div><div className="frac">{hands.vsR.atBats||0} AB</div><div className="avg">{hands.vsR.homeRuns||0} HR · {hands.vsR.strikeOuts||0} K</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div></div></div>)}
+        {isMLB&&dayNt&&(dayNt.day||dayNt.night)&&(<div className="card"><div className="sec-title">DAY / NIGHT SPLITS · {currentSeason()} Season</div><div style={{display:"flex",gap:8}}><div className="rate-card" style={{flex:1}}><div className="lbl">DAY GAMES</div>{dayNt.day?<><div className="pct" style={{color:"var(--amber)",fontSize:16}}>{dayNt.day.avg||dayNt.day.era||"—"}</div><div className="frac">{dayNt.day.atBats||dayNt.day.inningsPitched||0} {mlbGrp==="hitting"?"AB":"IP"}</div><div className="avg">{mlbGrp==="hitting"?`${dayNt.day.homeRuns||0} HR · ${dayNt.day.strikeOuts||0} K`:`${dayNt.day.strikeOuts||0} K`}</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div><div className="rate-card" style={{flex:1}}><div className="lbl">NIGHT GAMES</div>{dayNt.night?<><div className="pct" style={{color:"var(--info)",fontSize:16}}>{dayNt.night.avg||dayNt.night.era||"—"}</div><div className="frac">{dayNt.night.atBats||dayNt.night.inningsPitched||0} {mlbGrp==="hitting"?"AB":"IP"}</div><div className="avg">{mlbGrp==="hitting"?`${dayNt.night.homeRuns||0} HR · ${dayNt.night.strikeOuts||0} K`:`${dayNt.night.strikeOuts||0} K`}</div></>:<div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:8}}>No data</div>}</div></div></div>)}
+        {isMLB&&mlbGrp==="hitting"&&pitcher&&(<div className="vs-card"><div className="vs-title">BATTER VS PITCHER · {playerName} vs {pitcher.name}{pitcherInfo?.pitchHand&&<span className={`pill-tag ${pitcherInfo.pitchHand==="L"?"tag-l":"tag-r"}`}>{pitcherInfo.pitchHand}HP</span>}{platoAdv&&<span className={`pill-tag ${platoAdv.favorable?"tag-good":"tag-bad"}`}>{platoAdv.favorable?"PLATOON ADV":"PLATOON DIS"}</span>}</div>{vsP?<><div className="stat-grid-4"><SB label="AVG" value={vsP.avg||"—"} color="var(--info)"/><SB label="AB" value={vsP.atBats} color="var(--info)"/><SB label="HITS" value={vsP.hits} color="var(--info)"/><SB label="HR" value={vsP.homeRuns} color="var(--info)"/><SB label="RBI" value={vsP.rbi} color="var(--info)"/><SB label="BB" value={vsP.baseOnBalls} color="var(--info)"/><SB label="K" value={vsP.strikeOuts} color="var(--info)"/><SB label="OPS" value={vsP.ops||"—"} color="var(--info)"/></div>{vsPVal!=null&&<div style={{marginTop:8,fontSize:11,color:"rgba(255,255,255,0.5)"}}>Career {statList[statIdx].label} vs {pitcher.name}: <span style={{marginLeft:4,fontWeight:700,color:vsPVal>lineNum?"var(--brand)":"var(--danger)"}}>{vsPVal}</span><span style={{marginLeft:6,fontSize:10,color:vsPVal>lineNum?"var(--brand)":"var(--danger)"}}>({vsPVal>lineNum?"OVER":"UNDER"} {lineNum})</span></div>}</>:<div style={{fontSize:11,color:"rgba(255,255,255,0.3)"}}>No career BVP data found.</div>}</div>)}
 
         {(isWNBA||isNBA)&&wnbaNextOpp&&wnbaNextOpp.opp&&<div className="card">
           <div className="label-sm">NEXT OPPONENT</div>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:4}}>
-            <div style={{fontSize:13,fontWeight:600,color:"#fff"}}>{wnbaNextOpp.isHome?"vs":"@"} {wnbaNextOpp.opp}</div>
+            <div style={{fontSize:13,fontWeight:600,color:"var(--text)"}}>{wnbaNextOpp.isHome?"vs":"@"} {wnbaNextOpp.opp}</div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{wnbaNextOpp.date}</span>
               <button className="sport-btn active" style={{borderRadius:2,padding:"2px 10px",fontSize:10}} onClick={()=>{setH2hIn(wnbaNextOpp.opp);setH2hAct(wnbaNextOpp.opp);}}>Set H2H</button>
             </div>
           </div>
         </div>}
-        <div className="card"><div className="label-sm">H2H OPPONENT FILTER</div><div style={{display:"flex",gap:8}}><input className="tool-input" type="text" placeholder="Team or opponent name" value={h2hIn} onChange={e=>setH2hIn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&setH2hAct(h2hIn.trim())} style={{flex:1}}/><button className="sport-btn active" style={{flex:"0 0 auto",borderRadius:2,padding:"0 16px"}} onClick={()=>setH2hAct(h2hIn.trim())}>APPLY</button>{h2hAct&&<button className="sport-btn" style={{flex:"0 0 auto",borderRadius:2,padding:"0 12px",color:"#ff6b6b",borderColor:"rgba(255,77,77,0.3)"}} onClick={()=>{setH2hAct("");setH2hIn("");}}>CLEAR</button>}</div>{h2hAct&&<div style={{marginTop:8,fontSize:11,color:h2hG.length?"#00dc6e":"rgba(255,77,77,0.7)"}}>{h2hG.length?`${h2hG.length} games vs "${h2hAct}"`:`No games found vs "${h2hAct}"`}</div>}</div>
+        <div className="card"><div className="label-sm">H2H OPPONENT FILTER</div><div style={{display:"flex",gap:8}}><input className="tool-input" type="text" placeholder="Team or opponent name" value={h2hIn} onChange={e=>setH2hIn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&setH2hAct(h2hIn.trim())} style={{flex:1}}/><button className="sport-btn active" style={{flex:"0 0 auto",borderRadius:2,padding:"0 16px"}} onClick={()=>setH2hAct(h2hIn.trim())}>APPLY</button>{h2hAct&&<button className="sport-btn" style={{flex:"0 0 auto",borderRadius:2,padding:"0 12px",color:"var(--danger)",borderColor:"rgba(255,77,77,0.3)"}} onClick={()=>{setH2hAct("");setH2hIn("");}}>CLEAR</button>}</div>{h2hAct&&<div style={{marginTop:8,fontSize:11,color:h2hG.length?"var(--brand)":"rgba(255,77,77,0.7)"}}>{h2hG.length?`${h2hG.length} games vs "${h2hAct}"`:`No games found vs "${h2hAct}"`}</div>}</div>
 
         {isCS2&&(statList[statIdx]?.label==="Headshots"||statList[statIdx]?.label==="HS %")&&<div style={{background:"rgba(255,165,0,0.06)",border:"1px solid rgba(255,165,0,0.2)",borderRadius:4,padding:"10px 14px",fontSize:11,color:"rgba(255,200,100,0.8)",marginBottom:8}}>⚠️ HS data is sourced from GRID's official broadcast feed. Due to licensing agreements, some events may not be covered — affected matches will show 0. This is a data availability limitation, not a reflection of the player's actual stats.</div>}
         <div className="card"><div className="sec-title">Game Log</div>
@@ -933,8 +947,8 @@ function App(){
             const val=getVal(game);const hit=val!=null&&!isNaN(val)&&(ou==="over"?val>lineNum:val<lineNum);const isH2H=h2hAct&&(game._opp||"").toLowerCase().includes(h2hAct.toLowerCase());
             return(<div key={i} className="game-row" style={isH2H?{background:"rgba(0,220,110,0.04)",borderRadius:2,paddingLeft:4}:{}}>
               <div className={`hit-dot ${val!=null&&!isNaN(val)?(hit?"dot-hit":"dot-miss"):"dot-miss"}`} style={{opacity:val!=null?1:0.3}}/>
-              <div style={{flex:1,color:"rgba(255,255,255,0.4)",fontSize:11}}>{(game._date||"").toString().slice(0,10)}{game._opp?` vs ${game._opp}`:""}{game.champion&&<span style={{marginLeft:4,fontSize:9,color:"rgba(255,255,255,0.3)"}}>{game.champion}</span>}{game.result&&<span style={{marginLeft:6,fontSize:9,color:game.result==="W"?"#00dc6e":"#ff6b6b"}}>{game.result}</span>}{isH2H&&<span style={{marginLeft:6,fontSize:9,color:"#00dc6e",fontWeight:700}}>H2H</span>}</div>
-              <div style={{fontWeight:700,fontSize:13,minWidth:28,textAlign:"right",color:val!=null&&!isNaN(val)?(hit?"#00dc6e":"#ff6b6b"):"rgba(255,255,255,0.2)"}}>{val!=null&&!isNaN(val)?val:"—"}</div>
+              <div style={{flex:1,color:"rgba(255,255,255,0.4)",fontSize:11}}>{(game._date||"").toString().slice(0,10)}{game._opp?` vs ${game._opp}`:""}{game.champion&&<span style={{marginLeft:4,fontSize:9,color:"rgba(255,255,255,0.3)"}}>{game.champion}</span>}{game.result&&<span style={{marginLeft:6,fontSize:9,color:game.result==="W"?"var(--brand)":"var(--danger)"}}>{game.result}</span>}{isH2H&&<span style={{marginLeft:6,fontSize:9,color:"var(--brand)",fontWeight:700}}>H2H</span>}</div>
+              <div style={{fontWeight:700,fontSize:13,minWidth:28,textAlign:"right",color:val!=null&&!isNaN(val)?(hit?"var(--brand)":"var(--danger)"):"rgba(255,255,255,0.2)"}}>{val!=null&&!isNaN(val)?val:"—"}</div>
               <div style={{fontSize:10,color:"rgba(255,255,255,0.25)",width:34,textAlign:"right"}}>{val!=null&&!isNaN(val)?(hit?"HIT":"MISS"):""}</div>
             </div>);
           })}
@@ -956,7 +970,7 @@ function App(){
 
 function TrendColor({pct}){
   if(pct==null) return <span style={{color:'rgba(255,255,255,0.3)'}}>—</span>;
-  const c=pct>=70?'#00dc6e':pct>=50?'#ffc800':'#ff4d4d';
+  const c=pct>=70?'var(--brand)':pct>=50?'var(--amber)':'var(--danger)';
   return <b style={{color:c}}>{pct}%</b>;
 }
 
