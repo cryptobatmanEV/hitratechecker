@@ -113,6 +113,7 @@
     .history-bar{flex:1;min-width:5px;border-radius:4px 4px 0 0;background:var(--danger);position:relative;}.history-bar.hit{background:var(--brand);}.history-bar span{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);font:9px 'IBM Plex Mono',monospace;color:var(--text-secondary);padding-bottom:4px;}
     .drawer-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0;}.drawer-stat{padding:10px 6px;text-align:center;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-control);}.drawer-stat b{display:block;font:700 18px 'IBM Plex Mono',monospace;color:var(--text);}.drawer-stat span{display:block;margin-top:4px;font-size:9px;color:var(--text-muted);}
     .line-control{display:flex;gap:6px;align-items:center}.line-control .tool-input{min-width:0;text-align:center}.step-btn{min-width:44px;height:44px;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-2);color:var(--text);font:700 18px 'IBM Plex Mono',monospace;cursor:pointer}.quick-lines{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.quick-lines button{min-height:36px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-pill);background:transparent;color:var(--text-secondary);font:11px 'IBM Plex Mono',monospace;cursor:pointer}.quick-lines button:hover{border-color:var(--brand);color:var(--brand)}
+    .save-btn{min-width:32px;min-height:32px;background:transparent;border:1px solid var(--border);border-radius:var(--radius-pill);color:var(--text-muted);cursor:pointer}.save-btn.saved{color:var(--amber);border-color:rgba(255,200,0,.4)}
     @media (max-width:600px){.board-filters{grid-template-columns:1fr 1fr}.props-table th:nth-child(4),.props-table td:nth-child(4){display:none}.rate-bar{width:36px}}
     .desktop-only{display:block;}
     @media (max-width:900px){.shell-body{grid-template-columns:1fr}.filter-rail{position:static}.desktop-only{display:none}.main-panel{width:100%}.topbar{top:8px}.app-shell{max-width:760px}}
@@ -481,6 +482,7 @@ function App(){
   const [trendMin,setTrendMin]=useState('0');
   const [trendSort,setTrendSort]=useState('rate');
   const [selectedTrend,setSelectedTrend]=useState(null);
+  const [savedKeys,setSavedKeys]=useState(()=>{try{const v=JSON.parse(localStorage.getItem('propscope:saved')||'[]');return Array.isArray(v)?v:[];}catch{return[];}});
   const [wnbaNextOpp,setWnbaNextOpp]=useState(null);
   const [carStats,setCarSt] =useState(null);
   const [vsP,setVsP]        =useState(null);
@@ -520,7 +522,9 @@ function App(){
     const params=new URLSearchParams(location.search);params.set('tab',navTab);params.set('sport',sport);
     history.replaceState(null,'',`${location.pathname}?${params.toString()}`);
   },[navTab,sport]);
-  const selectNav=tab=>{setNavTab(tab);if(tab==='props'){setMode('trending');}else if(tab==='check'){setMode('check');}};
+  const propKey=item=>[item.player,item.stat,item.line,item.direction].join('|');
+  const toggleSaved=item=>setSavedKeys(prev=>{const key=propKey(item);const next=prev.includes(key)?prev.filter(v=>v!==key):[...prev,key];try{localStorage.setItem('propscope:saved',JSON.stringify(next));}catch{}return next;});
+  const selectNav=tab=>{setNavTab(tab);if(tab==='props'||tab==='saved'){setMode('trending');}else if(tab==='check'){setMode('check');}};
   // Fetch trending data when mode, sport, or scope changes
   useEffect(()=>{
     if(mode!=='trending') return;
@@ -740,7 +744,7 @@ function App(){
   const adjustLine=delta=>{const n=parseFloat(line);if(Number.isNaN(n))return;setLine((Math.round((n+delta)*2)/2).toFixed(1).replace(/\.0$/,''));};
   const trendRows=(trendData||[]).filter(item=>{
     const rate=item[trendWindow]?.pct;
-    return (!trendQuery||item.player?.toLowerCase().includes(trendQuery.toLowerCase())) &&
+    return (navTab!=='saved'||savedKeys.includes(propKey(item))) && (!trendQuery||item.player?.toLowerCase().includes(trendQuery.toLowerCase())) &&
       (trendDir==='all'||item.direction===trendDir) &&
       (rate!=null&&rate>=Number(trendMin||0));
   }).sort((a,b)=>trendSort==='player'?String(a.player).localeCompare(String(b.player)):(b[trendWindow]?.pct||0)-(a[trendWindow]?.pct||0));
@@ -833,14 +837,14 @@ function App(){
           </div>}
           {trendData.length>0&&<div style={{overflowX:'auto'}}><table className="props-table"><thead><tr><th>Player</th><th>Prop</th><th>Pick</th><th>Sample</th><th><button className="sport-btn" style={{minHeight:28,padding:'2px 7px'}} onClick={()=>setTrendSort(trendSort==='rate'?'player':'rate')}>{trendWindow.toUpperCase()} ↕</button></th><th>Avg</th></tr></thead><tbody>
             {trendRows.map((item,i)=>{const rate=item[trendWindow]?.pct;const color=rate>=70?'var(--brand)':rate>=50?'var(--amber)':'var(--danger)';return <tr key={`${item.player}-${item.stat}-${i}`} onClick={()=>setSelectedTrend(item)} onKeyDown={e=>e.key==='Enter'&&setSelectedTrend(item)} tabIndex="0" style={{cursor:'pointer'}}>
-              <td><span className="prop-player">{item.player}</span><span className="prop-meta">{item.team||'Team unavailable'}</span></td>
+              <td><button className={`save-btn ${savedKeys.includes(propKey(item))?'saved':''}`} onClick={e=>{e.stopPropagation();toggleSaved(item);}} aria-label={savedKeys.includes(propKey(item))?'Remove saved prop':'Save prop'}>{savedKeys.includes(propKey(item))?'★':'☆'}</button> <span className="prop-player">{item.player}</span><span className="prop-meta">{item.team||'Team unavailable'}</span></td>
               <td>{item.stat}<span className="prop-meta">Line {item.line}</span></td>
               <td><span className={`direction-pill ${item.direction==='under'?'direction-under':'direction-over'}`}>{item.direction==='under'?'UNDER':'OVER'}</span></td>
               <td className="num">{item[trendWindow]?.hits ?? ' '} of {item[trendWindow]?.total ?? ' '}</td>
               <td className="num" style={{color}}>{rate!=null?`${rate}%`:' '}<span className="rate-bar" style={{color}}><i style={{width:`${Math.max(0,Math.min(100,rate||0))}%`}}/></span></td>
               <td className="num">{item[trendWindow]?.avg ?? ' '}</td>
             </tr>;})}
-          </tbody></table>{trendRows.length===0&&<div style={{padding:'18px 0',color:'var(--text-muted)',fontSize:11}}>No props match these filters.</div>}</div>}
+          </tbody></table>{trendRows.length===0&&<div style={{padding:'18px 0',color:'var(--text-muted)',fontSize:11}}>{navTab==='saved'?'No saved props yet. Select the star beside a prop to save it on this device.':'No props match these filters.'}</div>}</div>}
           {trendData.length>0&&<div style={{fontSize:9,color:'rgba(255,255,255,0.2)',marginTop:12}}>Lines pulled from PrizePicks · Updated every 5 min · Hit rate vs actual PP line</div>}
         </div>}
         {selectedTrend&&<><div className="drawer-backdrop" onClick={()=>setSelectedTrend(null)}/><aside className="detail-drawer" aria-label="Prop detail">
@@ -1050,6 +1054,7 @@ function App(){
         </div>
         </main>
       </div>
+      <footer style={{padding:'16px 4px 4px',textAlign:'center',fontSize:10,color:'var(--text-muted)'}}>Data sources: PrizePicks lines and provider game logs when available. Not financial advice. <a href="https://theevcave.com/tools" style={{color:'var(--brand)'}}>The +EV Cave</a></footer>
       <nav className="mobile-tabs" aria-label="Mobile navigation">
         <button className={navTab==='props'?'active':''} onClick={()=>selectNav('props')}>Props</button>
         <button className={navTab==='check'?'active':''} onClick={()=>selectNav('check')}>Check Player</button>
