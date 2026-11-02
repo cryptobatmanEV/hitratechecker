@@ -1,6 +1,6 @@
 export const config = { maxDuration: 30 };
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+const UA = 'curl/8.7.1';
 
 // Main leagues only — no SZN/series/splits
 const PP_LEAGUE = { nba:'7', wnba:'3', nfl:'9', cfb:'15', mlb:'2', nhl:'8', lol:'121', dota:'174', cs2:'265', tennis:'5' };

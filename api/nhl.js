@@ -3,7 +3,7 @@ export const config = { maxDuration: 30 };
 const STATS_BASE = 'https://api.nhle.com/stats/rest/en';
 const WEB_BASE   = 'https://api-web.nhle.com/v1';
 const SEASON     = 20252026;
-const HEADERS    = { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' };
+const HEADERS    = { 'User-Agent': 'curl/8.7.1', Accept: 'application/json' };
 
 // Returns Map<gameId, blockedShots> for a player/season/gameType
 async function fetchBlockedShots(playerId, season, gameType) {

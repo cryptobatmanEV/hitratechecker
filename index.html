@@ -422,9 +422,11 @@ function App(){
   const [mode,setMode]=useState('check');
   const [trendSport,setTrendSport]=useState('nba');
   const [trendData,setTrendData]=useState(null);
+  const [trendDebug,setTrendDebug]=useState(null);
   const [trendLoad,setTrendLoad]=useState(false);
   const [trendErr,setTrendErr]=useState('');
   const [trendScope,setTrendScope]=useState(null);
+  const [trendRetry,setTrendRetry]=useState(0);
   const [wnbaNextOpp,setWnbaNextOpp]=useState(null);
   const [carStats,setCarSt] =useState(null);
   const [vsP,setVsP]        =useState(null);
@@ -458,13 +460,24 @@ function App(){
   // Fetch trending data when mode, sport, or scope changes
   useEffect(()=>{
     if(mode!=='trending') return;
-    setTrendData(null);setTrendLoad(true);setTrendErr('');
+    setTrendData(null);setTrendDebug(null);setTrendLoad(true);setTrendErr('');
+    const controller=new AbortController();
     const scopeParam=trendScope?`&scope=${trendScope}`:'';
-    fetch(`/api/trending?sport=${trendSport}${scopeParam}`)
-      .then(r=>{if(!r.ok&&r.status===504)throw new Error('Request timed out — try a smaller scope or different sport');return r.json();})
-      .then(d=>{setTrendData(d.results||[]);setTrendLoad(false);})
-      .catch(e=>{setTrendErr(e.message||'Failed to load trending');setTrendLoad(false);});
-  },[mode,trendSport,trendScope]);
+    fetch(`/api/trending?sport=${trendSport}${scopeParam}`,{signal:controller.signal})
+      .then(async r=>{
+        const text=await r.text();
+        let data;
+        try{data=JSON.parse(text);}catch{throw new Error(`Trending returned a non-JSON response (${r.status})`);}
+        if(!r.ok)throw new Error(data.error||`Trending request failed (${r.status})`);
+        return data;
+      })
+      .then(d=>{setTrendData(d.results||[]);setTrendDebug(d.debug||null);setTrendLoad(false);})
+      .catch(e=>{
+        if(e.name==='AbortError')return;
+        setTrendErr(e.message||'Failed to load trending');setTrendLoad(false);
+      });
+    return()=>controller.abort();
+  },[mode,trendSport,trendScope,trendRetry]);
 
   const onSelectPlayer=async p=>{
     setPlayer(p);setGameLog([]);setCarLog([]);setError("");setVsP(null);setVsT(null);setHands(null);setDayNt(null);setCarSt(null);setPitcher(null);setPitchQ("");setPInfo(null);setOppTmId(null);setOppTm("");setWnbaNextOpp(null);
@@ -703,10 +716,20 @@ function App(){
           {!trendScope&&<div style={{fontSize:10,color:'rgba(255,255,255,0.3)',marginTop:8}}>Select a scope to match PrizePicks props</div>}
         </div>}
         {trendLoad&&<div style={{textAlign:'center',padding:20}}><div className="spinner"/><div style={{fontSize:10,color:'rgba(255,255,255,0.3)',marginTop:8}}>Fetching PrizePicks lines + game logs...</div></div>}
-        {trendErr&&<div className="error-box">{trendErr}</div>}
+        {trendErr&&<div className="error-box">
+          <div>{trendErr}</div>
+          <button className="sport-btn" style={{marginTop:8}} onClick={()=>setTrendRetry(v=>v+1)}>TRY AGAIN</button>
+        </div>}
         {trendData&&<div className="card">
           <div className="sec-title" style={{marginBottom:12}}>🔥 {trendSport.toUpperCase()} — Top Trending Props · Sorted by L10%</div>
-          {trendData.length===0&&<div style={{color:'rgba(255,255,255,0.3)',fontSize:11}}>No trending props found for today. Try another sport.</div>}
+          {trendData.length===0&&<div style={{color:'rgba(255,255,255,0.3)',fontSize:11}}>
+            No matching props were returned for today. Try another sport or scope.
+            {trendDebug&&<div style={{marginTop:6,fontSize:10}}>
+              Lines found: {trendDebug.pp_total ?? trendDebug.raw_proj_count ?? 0}
+              {' · '}stat matches: {trendDebug.pp_stat_matched ?? 0}
+              {' · '}players matched: {trendDebug.players_id_matched ?? trendDebug.players_found ?? 0}
+            </div>}
+          </div>}
           {trendData.map((item,i)=>{
             const l10c=item.l10?.pct>=70?'#00dc6e':item.l10?.pct>=50?'#ffc800':'#ff4d4d';
             const l5c=item.l5?.pct>=70?'#00dc6e':item.l5?.pct>=50?'#ffc800':'#ff4d4d';

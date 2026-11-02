@@ -2,7 +2,7 @@ export const config = { maxDuration: 30 };
 
 const CORE  = 'https://sports.core.api.espn.com/v2/sports/tennis';
 const SITE  = 'https://site.api.espn.com/apis';
-const UA    = 'Mozilla/5.0';
+const UA    = 'curl/8.7.1';
 
 // Module-level cache — persists across warm invocations
 const _playerCache = {};   // norm(name) → {id,name,league,ts}  24h
