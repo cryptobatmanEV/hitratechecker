@@ -1,4 +1,5 @@
 export const config = { maxDuration: 30 };
+import { seasonFor } from './_seasons.js';
 
 const UA = 'curl/8.7.1';
 const SPORT  = 'football';
@@ -125,11 +126,6 @@ async function fetchGameStats(items, teamMap, batchSize = 30) {
   return results.filter(Boolean);
 }
 
-// CFB season starts ~Aug; if before July, use previous year
-function cfbSeason(y) {
-  return new Date().getMonth() < 6 ? y - 1 : y;
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store');
@@ -155,7 +151,7 @@ export default async function handler(req, res) {
 
     if (action === 'nextgame') {
       if (!teamId) return res.json(null);
-      const season = cfbSeason(new Date().getFullYear());
+      const season = seasonFor('college-football');
       const data = await espnGet(`https://site.api.espn.com/apis/site/v2/sports/${SPORT}/${LEAGUE}/teams/${encodeURIComponent(teamId)}/schedule?season=${season}`);
       const now = Date.now();
       const upcoming = (data.events || [])
@@ -175,8 +171,7 @@ export default async function handler(req, res) {
 
     if (action === 'gamelog') {
       if (!id) return res.json([]);
-      const year = new Date().getFullYear();
-      const curSeason = cfbSeason(year);
+      const curSeason = seasonFor('college-football');
       const teamMap = {};
 
       // Fetch 3 CFB seasons (regular + bowl/playoff fetched explicitly per season)

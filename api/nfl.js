@@ -1,4 +1,5 @@
 export const config = { maxDuration: 30 };
+import { seasonFor } from './_seasons.js';
 
 const UA = 'curl/8.7.1';
 const SPORT  = 'football';
@@ -145,11 +146,6 @@ async function fetchGameStats(items, teamMap, batchSize = 30) {
   return results.filter(Boolean);
 }
 
-// NFL season: starts ~Sep, so if month < Aug use previous year
-function nflSeason(y) {
-  return new Date().getMonth() < 7 ? y - 1 : y;
-}
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store');
@@ -175,7 +171,7 @@ export default async function handler(req, res) {
 
     if (action === 'nextgame') {
       if (!teamId) return res.json(null);
-      const season = nflSeason(new Date().getFullYear());
+      const season = seasonFor('nfl');
       const data = await espnGet(`https://site.api.espn.com/apis/site/v2/sports/${SPORT}/${LEAGUE}/teams/${encodeURIComponent(teamId)}/schedule?season=${season}`);
       const now = Date.now();
       const upcoming = (data.events || [])
@@ -195,8 +191,7 @@ export default async function handler(req, res) {
 
     if (action === 'gamelog') {
       if (!id) return res.json([]);
-      const year = new Date().getFullYear();
-      const curSeason = nflSeason(year);
+      const curSeason = seasonFor('nfl');
       const teamMap = await fetchTeamMap();
 
       // Fetch 3 NFL seasons (regular + postseason fetched explicitly per season)

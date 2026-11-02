@@ -1,4 +1,5 @@
 export const config = { maxDuration: 30 };
+import { seasonFor } from './_seasons.js';
 
 const CORE  = 'https://sports.core.api.espn.com/v2/sports/tennis';
 const SITE  = 'https://site.api.espn.com/apis';
@@ -63,7 +64,7 @@ async function getGamelog(id, league) {
   const hit  = _matchCache[cKey];
   if (hit && Date.now() - hit.ts < CACHE_TTL) return hit.data;
 
-  const year = new Date().getFullYear();
+  const year = seasonFor('tennis');
 
   // Two seasons in parallel
   const [log1, log2] = await getAll([

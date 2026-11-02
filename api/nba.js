@@ -1,4 +1,5 @@
 export const config = { maxDuration: 30 };
+import { seasonFor } from './_seasons.js';
 
 const UA = 'curl/8.7.1';
 
@@ -149,10 +150,7 @@ export default async function handler(req, res) {
     if (action === 'gamelog') {
       if (!id) return res.json([]);
 
-      // ESPN keys the NBA season by its ending year: the 2026-27 season is
-      // season 2027, while WNBA continues to use the calendar year.
-      const now = new Date();
-      const year = now.getUTCMonth() >= 8 ? now.getUTCFullYear() + 1 : now.getUTCFullYear();
+      const year = seasonFor('nba');
       const teamMap = await fetchTeamMap();
 
       let items;

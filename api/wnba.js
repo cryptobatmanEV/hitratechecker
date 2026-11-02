@@ -1,4 +1,5 @@
 export const config = { maxDuration: 30 };
+import { seasonFor } from './_seasons.js';
 
 const UA = 'curl/8.7.1';
 
@@ -148,7 +149,7 @@ export default async function handler(req, res) {
     if (action === 'gamelog') {
       if (!id) return res.json([]);
 
-      const year = new Date().getFullYear();
+      const year = seasonFor('wnba');
 
       const teamMap = await fetchTeamMap();
 
