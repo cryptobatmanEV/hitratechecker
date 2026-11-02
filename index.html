@@ -393,10 +393,10 @@ function SearchBox({label,placeholder,hint,onSearch,onSelect,selected}){
 
   useEffect(()=>{
     const onGlobalSearch=e=>{
-      const value=(e.detail||'').trim();
+      const payload=e.detail||'';const value=(typeof payload==='string'?payload:payload.query||'').trim();const autoSelect=typeof payload==='object'&&payload.autoSelect;
       if(!value)return;
       setQ(value);setSErr('');setBusy(true);
-      onSearch(value).then(r=>{setRes(r);setShow(r.length>0);if(!r.length)setSErr('No results found. Try a different spelling.');}).catch(err=>setSErr(err.message||'Search failed')).finally(()=>setBusy(false));
+      onSearch(value).then(r=>{setRes(r);if(autoSelect&&r[0])pick(r[0]);else{setShow(r.length>0);if(!r.length)setSErr('No results found. Try a different spelling.');}}).catch(err=>setSErr(err.message||'Search failed')).finally(()=>setBusy(false));
     };
     window.addEventListener('propscope:global-search',onGlobalSearch);
     return()=>window.removeEventListener('propscope:global-search',onGlobalSearch);
@@ -446,6 +446,8 @@ function App(){
   const [sport,setSport]    =useState("MLB");
   const [navTab,setNavTab]  =useState(new URLSearchParams(location.search).get('tab')||'check');
   const [globalQ,setGlobalQ]=useState('');
+  const [quickSearchPending,setQuickSearchPending]=useState(false);
+  const [quickOpen,setQuickOpen]=useState(false);
   const [mlbGrp,setMlbGrp] =useState("hitting");
   const [esGame,setEsGame]  =useState("cs2");
   const [mapScope,setMapScope]=useState("total"); // "total"|"1"|"2"|"3"|"4"|"5"|"1+2"|"1+2+3"
@@ -535,7 +537,7 @@ function App(){
     const aliases=[['passing yards','Pass Yards'],['passing yard','Pass Yards'],['pass yards','Pass Yards'],['rush attempts','Carries'],['rushing yards','Rush Yards'],['rush yards','Rush Yards'],['receiving yards','Rec Yards'],['rec yards','Rec Yards'],['pass completions','Pass Completions'],['pass attempts','Pass Attempts']];
     const lower=query.toLowerCase();const found=aliases.find(([phrase])=>lower.includes(phrase))||statList.map(s=>[s.label,s.label]).find(([phrase])=>lower.includes(phrase.toLowerCase()));
     if(found){chooseStat(found[1]);query=query.replace(new RegExp(found[0],'i'),'').replace(/\s+/g,' ').trim();}
-    setGlobalQ(query);selectNav('check');window.setTimeout(()=>window.dispatchEvent(new CustomEvent('propscope:global-search',{detail:query})),50);
+    setGlobalQ(query);setQuickSearchPending(true);selectNav('check');window.setTimeout(()=>window.dispatchEvent(new CustomEvent('propscope:global-search',{detail:{query,autoSelect:true}})),50);
   };
 
   const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setStatQuery(statList[0]?.label||"");setH2hIn("");setH2hAct("");setChartMode("last10");setChartRange("last10");setOppTmId(null);setOppTm("");setLogPage(0);setWnbaNextOpp(null);};
@@ -621,8 +623,9 @@ function App(){
 
   const canCheck=player!=null&&line&&!isNaN(parseFloat(line));
 
-  const checkHistory=async()=>{
-    if(!canCheck)return;
+  const checkHistory=async(overrideLine)=>{
+    const requestedLine=overrideLine??line;if(!player||!requestedLine||isNaN(parseFloat(requestedLine)))return;
+    if(overrideLine!=null)setLine(String(overrideLine));
     setLoad(true);setError("");setDebug("Fetching data...");
     setGameLog([]);setCarLog([]);setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);
     try{
@@ -697,6 +700,11 @@ function App(){
     }catch(e){setError(e.message);}
     finally{setLoad(false);}
   };
+
+  useEffect(()=>{
+    if(!quickSearchPending||!player||!ppLine?.line)return;
+    setQuickSearchPending(false);setLine(String(ppLine.line));setQuickOpen(true);checkHistory(ppLine.line);
+  },[quickSearchPending,player?.id,ppLine?.line]);
 
   const lineNum=parseFloat(line);
   const hasData=gameLog.length>0&&statList[statIdx]&&!isNaN(lineNum);
@@ -803,6 +811,13 @@ function App(){
   return(
     <div style={{minHeight:"100vh",background:"var(--bg)",backgroundImage:"radial-gradient(ellipse at 20% 0%,rgba(0,200,100,0.05) 0%,transparent 50%)",padding:"12px 16px 24px",display:"flex",justifyContent:"center"}}>
     <div className="app-shell">
+      {quickOpen&&hasData&&<><div className="drawer-backdrop" onClick={()=>setQuickOpen(false)}/><aside className="detail-drawer" aria-label="Quick player research">
+        <div className="drawer-head"><div><div className="label-sm">PLAYER RESEARCH</div><h2 style={{fontSize:20,lineHeight:1.2}}>{playerName}</h2><div style={{color:"var(--text-muted)",fontSize:11,marginTop:4}}>{activeStatLabel} · {ou.toUpperCase()} {lineNum}</div></div><button className="drawer-close" onClick={()=>setQuickOpen(false)}>Close</button></div>
+        <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:14}}>{[['last5','L5'],['last10','L10'],['last30','L30'],['season','SEASON']].map(([key,label])=><button key={key} className={`sport-btn ${chartMode!=='h2h'&&chartRange===key?'active':''}`} style={{borderRadius:2,padding:"5px 8px",fontSize:10}} onClick={()=>{setChartRange(key);setChartMode("last10");}}>{label}</button>)}{h2hAct&&<button className={`sport-btn ${chartMode==='h2h'?'active':''}`} style={{borderRadius:2,padding:"5px 8px",fontSize:10}} onClick={()=>setChartMode("h2h")}>H2H</button>}</div>
+        <div className="sec-title">{chartMode==='h2h'&&h2hAct?`H2H · ${h2hAct.toUpperCase()}`:chartRange==='last5'?"LAST 5 GAMES":chartRange==='last30'?"LAST 30 GAMES":chartRange==='season'?"SEASON":"LAST 10 GAMES"}</div>
+        <div className="last10-chart-shell" style={{marginTop:8}}><div className="last10-axis last10-axis-left" aria-hidden="true"><span>{chartMax}</span><span>{chartMid}</span><span>0</span></div><div className="last10-chart-scroll"><div className="last10-chart" style={chartGames.length>8?{width:`${Math.max(700,chartGames.length*52)}px`}:{}}>{chartGames.map((game,i)=>{const value=getVal(game);const valid=value!=null&&!Number.isNaN(Number(value));const hit=valid&&(ou==='over'?value>lineNum:value<lineNum);const barHeight=valid?Math.max(5,Math.min(100,(Number(value)/chartMax)*100)):5;return <div className="last10-bar-wrap" key={i}><div className={`last10-bar ${valid?(hit?'hit':'miss'):''}`} style={{height:`${barHeight}%`}}/><span className="last10-value" style={{bottom:`calc(${barHeight}% + 4px)`}}>{valid?value:' '}</span><span className="last10-label" title={(game._date||'').toString().slice(0,10)}>{(game._date||'').toString().slice(5,10)}</span></div>;})}</div></div><div className="last10-axis last10-axis-right" aria-hidden="true"><span>{chartMax}</span><span>{chartMid}</span><span>0</span></div></div>
+        <div style={{fontSize:10,color:"var(--text-muted)",marginTop:18}}>Green cleared the line; red did not. Scroll horizontally for Season dates.</div>
+      </aside></>}
       <header className="topbar">
         <div className="wordmark">PROP<span style={{color:"var(--brand)"}}>SCOPE</span></div>
         <div className="global-search" style={{position:"relative"}}>
@@ -1070,7 +1085,7 @@ function App(){
             <div className="last10-axis last10-axis-left" aria-hidden="true"><span>{chartMax}</span><span>{chartMid}</span><span>0</span></div>
             <div className="last10-chart-scroll">
               <div className="last10-chart" style={chartGames.length>14?{width:`${Math.max(760,chartGames.length*52)}px`}:{}} aria-label={`${chartMode==='h2h'?'Head to head':chartRange} games for ${playerName} ${statLabel}`}>
-                {chartGames.map((game,i)=>{const value=getVal(game);const valid=value!=null&&!Number.isNaN(Number(value));const hit=valid&&(ou==='over'?value>lineNum:value<lineNum);return <div className="last10-bar-wrap" key={i}><div className={`last10-bar ${valid?(hit?'hit':'miss'):''}`} style={{height:`${valid?Math.max(5,Math.min(100,(Number(value)/chartMax)*100)):5}%`}}/><span className="last10-value">{valid?value:' '}</span><span className="last10-label">{(game._date||'').toString().slice(5,10)}</span></div>;})}
+                {chartGames.map((game,i)=>{const value=getVal(game);const valid=value!=null&&!Number.isNaN(Number(value));const hit=valid&&(ou==='over'?value>lineNum:value<lineNum);const barHeight=valid?Math.max(5,Math.min(100,(Number(value)/chartMax)*100)):5;return <div className="last10-bar-wrap" key={i}><div className={`last10-bar ${valid?(hit?'hit':'miss'):''}`} style={{height:`${barHeight}%`}}/><span className="last10-value" style={{bottom:`calc(${barHeight}% + 4px)`}}>{valid?value:' '}</span><span className="last10-label" title={(game._date||'').toString().slice(0,10)}>{(game._date||'').toString().slice(5,10)}</span></div>;})}
               </div>
             </div>
             <div className="last10-axis last10-axis-right" aria-hidden="true"><span>{chartMax}</span><span>{chartMid}</span><span>0</span></div>
