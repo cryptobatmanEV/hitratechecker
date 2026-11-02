@@ -1048,13 +1048,7 @@ function App(){
       )}
 
       {/* Stat + line */}
-      <div className="card">
-        <div className="label-sm">PROP TYPE SEARCH</div>
-        <input className="tool-input" list="prop-type-options" value={statQuery} placeholder="Type or choose a prop type..." onChange={e=>{setStatQuery(e.target.value);chooseStat(e.target.value);}} onBlur={()=>{if(!chooseStat(statQuery))setStatQuery(activeStatLabel);}} aria-label="Prop type search"/>
-        <datalist id="prop-type-options">{statList.map((s,i)=><option key={i} value={s.label}/>)}</datalist>
-        <select className="stat-select" value={statIdx} onChange={e=>{const idx=parseInt(e.target.value);setStatIdx(idx);setStatQuery(statList[idx]?.label||"");}} aria-label="Choose prop type"><option value="" disabled>Choose a prop type from the dropdown</option>{statList.map((s,i)=><option key={i} value={i}>{s.label}</option>)}</select>
-        <div style={{fontSize:10,color:"rgba(255,255,255,0.35)",marginTop:6}}>Choose a listed prop so the correct player stat and graph are loaded.</div>
-      </div>
+      <div className="card"><div className="label-sm">PROP TYPE</div><select className="stat-select" value={statIdx} onChange={e=>{const idx=parseInt(e.target.value);setStatIdx(idx);setStatQuery(statList[idx]?.label||"");}} aria-label="Choose prop type">{statList.map((s,i)=><option key={i} value={i}>{s.label}</option>)}</select><div style={{fontSize:10,color:"rgba(255,255,255,0.35)",marginTop:6}}>Choose the prop from the dropdown so the correct stat and graph are loaded.</div></div>
       
       {isES&&<div className="card"><div className="label-sm">MAP SCOPE</div><select className="stat-select" value={mapScope} onChange={e=>setMapScope(e.target.value)}><option value="total">Full Series (all maps)</option><option value="1+2">Maps 1+2 Combined</option><option value="1">Map 1 Only</option><option value="2">Map 2 Only</option><option value="3">Map 3 Only</option><option value="1+2+3">Maps 1+2+3 Combined</option><option value="4">Map 4 Only</option><option value="5">Map 5 Only</option></select><div style={{fontSize:10,color:"rgba(255,255,255,0.35)",marginTop:6}}>{isLoL?"PrizePicks/Sleeper lines are typically Maps 1+2 Combined or Full Series":isDota?"Dota 2 props are typically per-game (Map 1) or Full Series total":"DFS books typically prop Maps 1+2 Combined or Map 1 for CS2"}<br/><span style={{opacity:0.5}}>— means no data for that map scope (series didn't reach it)</span></div></div>}
       {player&&<div className="pp-line-card"><div><div className="label-sm" style={{marginBottom:4,color:'var(--brand)'}}>PRIZEPICKS LINE</div>{ppLineLoad?<small>Checking current PrizePicks projections...</small>:ppLine?<><strong>{ppLine.line}</strong><small>{ppLine.stat} · {ppLine.direction} · {ppLine.team||'Team unavailable'}</small></>:<small>{ppLineErr||'No current PrizePicks line found for this player and stat.'}</small>}</div>{ppLine&&<button className="sport-btn active" onClick={()=>setLine(String(ppLine.line))}>USE LINE</button>}</div>}
@@ -1062,7 +1056,8 @@ function App(){
 
       {error&&<div className="error-box">{error}</div>}
       {!error&&debug&&<div className="debug-box">{debug}</div>}
-      <button className="check-btn" onClick={checkHistory} disabled={!canCheck||loading}>{loading?"FETCHING DATA...":"CHECK HISTORY"}</button>
+      <button className="check-btn" type="button" onClick={checkHistory} disabled={!canCheck||loading} title={!canCheck?"Select a player and enter a numeric projection line":"Check player history"}>{loading?"FETCHING DATA...":"CHECK HISTORY"}</button>
+      {!canCheck&&!loading&&<div style={{fontSize:10,color:"rgba(255,255,255,0.35)",textAlign:"center",marginTop:6}}>Select a player and enter a numeric projection line to enable history.</div>}
       {loading&&<div style={{textAlign:"center",padding:"24px 0"}}><div className="spinner"/><div style={{marginTop:10,fontSize:11,color:"rgba(255,255,255,0.3)"}}>Fetching data...</div></div>}
 
       {/* ── RESULTS ────────────────────────────────────────────────────────── */}
