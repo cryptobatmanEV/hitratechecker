@@ -168,8 +168,8 @@ export default async function handler(req, res) {
         } catch {}
         const startYear = Math.max(debutYear, year - 12);
         const careerYears = Array.from(
-          { length: year - startYear },
-          (_, i) => year - 1 - i
+          { length: year - startYear + 1 },
+          (_, i) => year - i
         );
         const allSeasons = await Promise.all(
           careerYears.map(y => fetchEventlogItems(id, y).catch(() => []))

@@ -149,7 +149,10 @@ export default async function handler(req, res) {
     if (action === 'gamelog') {
       if (!id) return res.json([]);
 
-      const year = new Date().getFullYear();
+      // ESPN keys the NBA season by its ending year: the 2026-27 season is
+      // season 2027, while WNBA continues to use the calendar year.
+      const now = new Date();
+      const year = now.getUTCMonth() >= 8 ? now.getUTCFullYear() + 1 : now.getUTCFullYear();
       const teamMap = await fetchTeamMap();
 
       let items;
@@ -168,8 +171,8 @@ export default async function handler(req, res) {
         } catch {}
         const startYear = Math.max(debutYear, year - 15); // max 15 seasons
         const careerYears = Array.from(
-          { length: year - startYear },
-          (_, i) => year - 1 - i
+          { length: year - startYear + 1 },
+          (_, i) => year - i
         );
         const allSeasons = await Promise.all(
           careerYears.map(y => fetchSeasonItems(id, y).catch(() => []))
