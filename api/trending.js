@@ -576,14 +576,14 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 's-maxage=300,stale-while-revalidate=60');
 
-  const { sport='nba', scope } = req.query;
+  const { sport='nba', scope, action } = req.query;
   const lid = PP_LEAGUE[sport];
   if (!lid) return res.status(400).json({ error:'Unsupported sport' });
 
   // Check results cache first — avoids re-running all player searches + gamelogs
   const cacheKey = `${sport}:${scope||''}`;
   const cachedResult = _resultsCache[cacheKey];
-  if (cachedResult && Date.now() - cachedResult.ts < RESULTS_TTL) {
+  if (action !== 'line' && cachedResult && Date.now() - cachedResult.ts < RESULTS_TTL) {
     return res.json({ ...cachedResult.data, cached: true });
   }
 
@@ -663,6 +663,20 @@ export default async function handler(req, res) {
     if (scope && SCOPE_PATTERNS[scope] && ['lol','dota','cs2'].includes(sport)) {
       const pat = SCOPE_PATTERNS[scope];
       projs.splice(0, projs.length, ...projs.filter(p => pat.test(p.stat||'')));
+    }
+
+    if (action === 'line') {
+      const lookupPlayer = (req.query.player || '').toString().trim().toLowerCase();
+      const lookupStat = (req.query.stat || '').toString().trim().toLowerCase();
+      if (!lookupPlayer || !lookupStat) return res.status(400).json({ error:'Player and stat are required' });
+      const matches = projs.filter(p => p.name.toLowerCase().includes(lookupPlayer) && p.stat.toLowerCase().includes(lookupStat));
+      return res.json({
+        sport,
+        player: req.query.player,
+        stat: req.query.stat,
+        matches: matches.slice(0, 10).map(p => ({ player:p.name, team:p.team, stat:p.stat, line:p.line, direction:p.allowUnder?'over/under':'over only' })),
+        updated: new Date().toISOString(),
+      });
     }
 
     if (!projs.length) return res.json({

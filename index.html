@@ -114,6 +114,8 @@
     .drawer-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0;}.drawer-stat{padding:10px 6px;text-align:center;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-control);}.drawer-stat b{display:block;font:700 18px 'IBM Plex Mono',monospace;color:var(--text);}.drawer-stat span{display:block;margin-top:4px;font-size:9px;color:var(--text-muted);}
     .line-control{display:flex;gap:6px;align-items:center}.line-control .tool-input{min-width:0;text-align:center}.step-btn{min-width:44px;height:44px;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-2);color:var(--text);font:700 18px 'IBM Plex Mono',monospace;cursor:pointer}.quick-lines{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.quick-lines button{min-height:36px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-pill);background:transparent;color:var(--text-secondary);font:11px 'IBM Plex Mono',monospace;cursor:pointer}.quick-lines button:hover{border-color:var(--brand);color:var(--brand)}
     .save-btn{min-width:32px;min-height:32px;background:transparent;border:1px solid var(--border);border-radius:var(--radius-pill);color:var(--text-muted);cursor:pointer}.save-btn.saved{color:var(--amber);border-color:rgba(255,200,0,.4)}
+    .pp-line-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;margin-bottom:12px;background:rgba(0,220,110,.05);border:1px solid rgba(0,220,110,.24);border-radius:var(--radius-card)}.pp-line-card strong{display:block;font:700 20px 'IBM Plex Mono',monospace;color:var(--brand)}.pp-line-card small{display:block;color:var(--text-muted);font-size:10px;margin-top:3px}
+    .last10-chart{display:flex;align-items:flex-end;gap:8px;height:170px;padding:20px 4px 0;border-bottom:1px solid var(--border);background:linear-gradient(to top,rgba(255,255,255,.04) 1px,transparent 1px);background-size:100% 25%}.last10-bar-wrap{flex:1;height:100%;display:flex;align-items:flex-end;justify-content:center;position:relative}.last10-bar{width:min(24px,70%);min-height:4px;border-radius:5px 5px 0 0;background:var(--info)}.last10-bar.hit{background:var(--brand)}.last10-bar.miss{background:var(--danger)}.last10-value{position:absolute;bottom:calc(100% + 4px);font:10px 'IBM Plex Mono',monospace;color:var(--text-secondary)}.last10-label{position:absolute;top:calc(100% + 6px);font-size:9px;color:var(--text-muted);white-space:nowrap}
     @media (max-width:600px){.board-filters{grid-template-columns:1fr 1fr}.props-table th:nth-child(4),.props-table td:nth-child(4){display:none}.rate-bar{width:36px}}
     .desktop-only{display:block;}
     @media (max-width:900px){.shell-body{grid-template-columns:1fr}.filter-rail{position:static}.desktop-only{display:none}.main-panel{width:100%}.topbar{top:8px}.app-shell{max-width:760px}}
@@ -389,6 +391,17 @@ function SearchBox({label,placeholder,hint,onSearch,onSelect,selected}){
   // Keep input in sync when parent clears the player
   useEffect(()=>{if(!selected)setQ("");},[selected]);
 
+  useEffect(()=>{
+    const onGlobalSearch=e=>{
+      const value=(e.detail||'').trim();
+      if(!value)return;
+      setQ(value);setSErr('');setBusy(true);
+      onSearch(value).then(r=>{setRes(r);setShow(r.length>0);if(!r.length)setSErr('No results found. Try a different spelling.');}).catch(err=>setSErr(err.message||'Search failed')).finally(()=>setBusy(false));
+    };
+    window.addEventListener('propscope:global-search',onGlobalSearch);
+    return()=>window.removeEventListener('propscope:global-search',onGlobalSearch);
+  },[onSearch]);
+
   const onChange=v=>{
     setQ(v);setSErr("");
     clearTimeout(timer.current);
@@ -411,7 +424,7 @@ function SearchBox({label,placeholder,hint,onSearch,onSelect,selected}){
     <div className="card">
       <div className="label-sm">{label}</div>
       <div className="search-wrap" ref={wrap}>
-        <input className="tool-input" type="text" placeholder={placeholder}
+        <input id="player-search" className="tool-input" type="text" placeholder={placeholder}
           value={q} onChange={e=>onChange(e.target.value)}
           onFocus={()=>results.length>0&&setShow(true)}/>
         {busy&&<div style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)"}}><div className="spinner" style={{width:16,height:16,borderWidth:2}}/></div>}
@@ -482,6 +495,9 @@ function App(){
   const [trendMin,setTrendMin]=useState('0');
   const [trendSort,setTrendSort]=useState('rate');
   const [selectedTrend,setSelectedTrend]=useState(null);
+  const [ppLine,setPpLine]=useState(null);
+  const [ppLineLoad,setPpLineLoad]=useState(false);
+  const [ppLineErr,setPpLineErr]=useState('');
   const [savedKeys,setSavedKeys]=useState(()=>{try{const v=JSON.parse(localStorage.getItem('propscope:saved')||'[]');return Array.isArray(v)?v:[];}catch{return[];}});
   const [wnbaNextOpp,setWnbaNextOpp]=useState(null);
   const [carStats,setCarSt] =useState(null);
@@ -507,6 +523,8 @@ function App(){
   
   const isPit=isMLB&&mlbGrp==="pitching";
   const statList=isMLB?(mlbGrp==="hitting"?HIT_STATS:PIT_STATS):isNFL?NFL_STATS:isCFB?CFB_STATS:isNHL?NHL_STATS:isWNBA?WNBA_STATS:isNBA?NBA_STATS:isTennis?TENNIS_STATS:(ES_STATS[esGame]||ES_STATS.cs2);
+  const prizePicksSport=isMLB?'mlb':isNFL?'nfl':isCFB?'cfb':isNHL?'nhl':isWNBA?'wnba':isNBA?'nba':isTennis?'tennis':isES?(esGame==='dota2'?'dota':esGame):null;
+  const activeStatLabel=statList[statIdx]?.label||'';
 
   const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setH2hIn("");setH2hAct("");setOppTmId(null);setOppTm("");setLogPage(0);setWnbaNextOpp(null);};
   useEffect(()=>{clearAll();setMapScope("total");setTennisBo(0);},[sport,mlbGrp,esGame]);
@@ -514,6 +532,16 @@ function App(){
   useEffect(()=>{const h=e=>{if(pWrap.current&&!pWrap.current.contains(e.target))setShowPD(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]); 
   // Reset scope when sport changes (not on every fetch)
   useEffect(()=>{setTrendScope(null);},[trendSport]);
+  useEffect(()=>{
+    if(!player?.name||!prizePicksSport||!activeStatLabel){setPpLine(null);setPpLineErr('');return;}
+    const controller=new AbortController();setPpLine(null);setPpLineErr('');setPpLineLoad(true);
+    fetch(`/api/trending?action=line&sport=${prizePicksSport}&player=${encodeURIComponent(player.name)}&stat=${encodeURIComponent(activeStatLabel)}`,{signal:controller.signal})
+      .then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`PrizePicks lookup failed (${r.status})`);return d;})
+      .then(d=>setPpLine(d.matches?.[0]||null))
+      .catch(e=>{if(e.name!=='AbortError')setPpLineErr(e.message||'PrizePicks line unavailable');})
+      .finally(()=>{if(!controller.signal.aborted)setPpLineLoad(false);});
+    return()=>controller.abort();
+  },[player?.name,prizePicksSport,activeStatLabel]);
   useEffect(()=>{
     const onKey=e=>{if(e.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)){e.preventDefault();globalSearchRef.current?.focus();}};
     document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);
@@ -742,6 +770,16 @@ function App(){
   const vsPVal=vsP&&isMLB?statList[statIdx]?.calc(vsP):null;
   const playerName=player?.name||"";
   const adjustLine=delta=>{const n=parseFloat(line);if(Number.isNaN(n))return;setLine((Math.round((n+delta)*2)/2).toFixed(1).replace(/\.0$/,''));};
+  const quickLineValues=()=>{
+    const label=activeStatLabel.toLowerCase();
+    if(isNFL||isCFB){if(label.includes('pass yard'))return [199.5,249.5,299.5,349.5];if(label.includes('rush yard'))return [39.5,59.5,79.5,99.5];if(label.includes('rec yard'))return [19.5,39.5,59.5,79.5];if(label.includes('reception'))return [2.5,4.5,5.5,6.5];if(label.includes('attempt')||label.includes('carry'))return [9.5,14.5,19.5,24.5];if(label.includes('td')||label.includes('touchdown'))return [0.5,1.5,2.5];}
+    if(isNBA||isWNBA){if(label.includes('point'))return [9.5,14.5,19.5,24.5,29.5];if(label.includes('rebound'))return [2.5,4.5,6.5,8.5,10.5];if(label.includes('assist'))return [1.5,3.5,5.5,7.5,9.5];if(label.includes('three')||label.includes('3-pointer'))return [0.5,1.5,2.5,3.5];if(['pra','pr','pa','ra'].includes(label))return [14.5,24.5,34.5,44.5];}
+    if(isMLB){if(label.includes('total base'))return [0.5,1.5,2.5,3.5];if(label.includes('hit')||label.includes('single'))return [0.5,1.5,2.5];if(label.includes('strike')||label.includes('walk')||label.includes('run')||label.includes('rbi')||label.includes('home run'))return [0.5,1.5,2.5];if(label.includes('out'))return [14.5,17.5,20.5,22.5];}
+    if(isNHL){if(label.includes('shot'))return [1.5,2.5,3.5,4.5];if(label.includes('point'))return [0.5,1.5,2.5];return [0.5,1.5,2.5];}
+    if(isTennis){if(label.includes('set'))return [2.5,3.5,4.5];return [18.5,20.5,22.5,24.5,26.5];}
+    if(isES)return [4.5,9.5,14.5,19.5,24.5];
+    return [0.5,1.5,2.5,5.5,9.5];
+  };
   const trendRows=(trendData||[]).filter(item=>{
     const rate=item[trendWindow]?.pct;
     return (navTab!=='saved'||savedKeys.includes(propKey(item))) && (!trendQuery||item.player?.toLowerCase().includes(trendQuery.toLowerCase())) &&
@@ -756,7 +794,7 @@ function App(){
         <div className="wordmark">PROP<span style={{color:"var(--brand)"}}>SCOPE</span></div>
         <div className="global-search" style={{position:"relative"}}>
           <kbd>/</kbd>
-          <input ref={globalSearchRef} value={globalQ} onChange={e=>setGlobalQ(e.target.value)} placeholder="Search player or prop" aria-label="Global search" onKeyDown={e=>{if(e.key==='Enter'&&globalQ.trim()){selectNav('check');}}}/>
+          <input ref={globalSearchRef} value={globalQ} onChange={e=>setGlobalQ(e.target.value)} placeholder="Search player name" aria-label="Global player search" onKeyDown={e=>{if(e.key==='Enter'&&globalQ.trim()){selectNav('check');window.setTimeout(()=>window.dispatchEvent(new CustomEvent('propscope:global-search',{detail:globalQ})),50);}}}/>
         </div>
         <nav className="topbar-nav" aria-label="Primary navigation">
           <button className={navTab==='props'?'active':''} onClick={()=>selectNav('props')}>Props</button>
@@ -984,7 +1022,8 @@ function App(){
       <div className="card"><div className="label-sm">STAT CATEGORY</div><select className="stat-select" value={statIdx} onChange={e=>setStatIdx(parseInt(e.target.value))}>{statList.map((s,i)=><option key={i} value={i}>{s.label}</option>)}</select></div>
       
       {isES&&<div className="card"><div className="label-sm">MAP SCOPE</div><select className="stat-select" value={mapScope} onChange={e=>setMapScope(e.target.value)}><option value="total">Full Series (all maps)</option><option value="1+2">Maps 1+2 Combined</option><option value="1">Map 1 Only</option><option value="2">Map 2 Only</option><option value="3">Map 3 Only</option><option value="1+2+3">Maps 1+2+3 Combined</option><option value="4">Map 4 Only</option><option value="5">Map 5 Only</option></select><div style={{fontSize:10,color:"rgba(255,255,255,0.35)",marginTop:6}}>{isLoL?"PrizePicks/Sleeper lines are typically Maps 1+2 Combined or Full Series":isDota?"Dota 2 props are typically per-game (Map 1) or Full Series total":"DFS books typically prop Maps 1+2 Combined or Map 1 for CS2"}<br/><span style={{opacity:0.5}}>— means no data for that map scope (series didn't reach it)</span></div></div>}
-      <div className="card"><div className="label-sm">PROJECTION LINE</div><div style={{display:"flex",gap:10,flexWrap:"wrap"}}><div className="line-control" style={{flex:"1 1 180px"}}><button className="step-btn" onClick={()=>adjustLine(-0.5)} aria-label="Decrease line">−</button><input className="tool-input" type="number" step="0.5" inputMode="decimal" placeholder="e.g. 19.5" value={line} onChange={e=>setLine(e.target.value)} aria-label="Projection line"/><button className="step-btn" onClick={()=>adjustLine(0.5)} aria-label="Increase line">+</button></div><div style={{display:"flex",flex:"1 1 180px"}}><button className={"ou-btn ou-over"+(ou==="over"?" active":"")} onClick={()=>setOu("over")}>OVER</button><button className={"ou-btn ou-under"+(ou==="under"?" active":"")} onClick={()=>setOu("under")}>UNDER</button></div></div><div className="quick-lines" aria-label="Quick line values">{[0.5,1.5,2.5,5.5,9.5,19.5].map(v=><button key={v} onClick={()=>setLine(String(v))}>{v}</button>)}</div></div>
+      {player&&<div className="pp-line-card"><div><div className="label-sm" style={{marginBottom:4,color:'var(--brand)'}}>PRIZEPICKS LINE</div>{ppLineLoad?<small>Checking current PrizePicks projections...</small>:ppLine?<><strong>{ppLine.line}</strong><small>{ppLine.stat} · {ppLine.direction} · {ppLine.team||'Team unavailable'}</small></>:<small>{ppLineErr||'No current PrizePicks line found for this player and stat.'}</small>}</div>{ppLine&&<button className="sport-btn active" onClick={()=>setLine(String(ppLine.line))}>USE LINE</button>}</div>}
+      <div className="card"><div className="label-sm">PROJECTION LINE</div><div style={{display:"flex",gap:10,flexWrap:"wrap"}}><div className="line-control" style={{flex:"1 1 180px"}}><button className="step-btn" onClick={()=>adjustLine(-0.5)} aria-label="Decrease line">−</button><input className="tool-input" type="number" step="0.5" inputMode="decimal" placeholder="e.g. 19.5" value={line} onChange={e=>setLine(e.target.value)} aria-label="Projection line"/><button className="step-btn" onClick={()=>adjustLine(0.5)} aria-label="Increase line">+</button></div><div style={{display:"flex",flex:"1 1 180px"}}><button className={"ou-btn ou-over"+(ou==="over"?" active":"")} onClick={()=>setOu("over")}>OVER</button><button className={"ou-btn ou-under"+(ou==="under"?" active":"")} onClick={()=>setOu("under")}>UNDER</button></div></div><div className="quick-lines" aria-label="Quick line values">{quickLineValues().map(v=><button key={v} onClick={()=>setLine(String(v))}>{v}</button>)}</div></div>
 
       {error&&<div className="error-box">{error}</div>}
       {!error&&debug&&<div className="debug-box">{debug}</div>}
@@ -1001,6 +1040,11 @@ function App(){
 
         <div className="card">
           <div className="sec-title">{playerName} · {statList[statIdx]?.label} {ou==="over"?"Over":"Under"} {lineNum}<span style={{marginLeft:8,fontSize:10,color:"rgba(255,255,255,0.3)",fontWeight:400}}>({logGames.length} games)</span></div>
+          <div className="sec-title" style={{marginTop:16}}>LAST 10 GAMES</div>
+          <div className="last10-chart" aria-label={`Last 10 games for ${playerName} ${statLabel}`}>
+            {recentG.slice(0,10).reverse().map((game,i)=>{const value=getVal(game);const valid=value!=null&&!Number.isNaN(Number(value));const hit=valid&&(ou==='over'?value>lineNum:value<lineNum);const max=Math.max(lineNum||0,...recentG.slice(0,10).map(g=>Number(getVal(g))||0),1);return <div className="last10-bar-wrap" key={i}><div className={`last10-bar ${valid?(hit?'hit':'miss'):''}`} style={{height:`${valid?Math.max(5,Math.min(100,(Number(value)/max)*100)):5}%`}}/><span className="last10-value">{valid?value:' '}</span><span className="last10-label">{(game._date||'').toString().slice(5,10)}</span></div>;})}
+          </div>
+          <div style={{fontSize:10,color:'var(--text-muted)',margin:'18px 0 8px'}}>Bars show actual game-log values against the selected line. Green cleared it, red did not.</div>
           <div style={{display:"flex",gap:6,marginBottom:8}}><RateCard label="L5" data={l5}/><RateCard label="L10" data={l10}/><RateCard label="L30" data={l30}/><RateCard label="SEASON" data={seasonR}/></div>
           <div style={{display:"flex",gap:6}}>
             {(isMLB||isNHL||isDota||isWNBA||isNBA)&&careerR&&<RateCard label="CAREER" data={careerR} gold/>}
