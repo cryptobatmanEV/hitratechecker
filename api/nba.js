@@ -29,7 +29,7 @@ async function fetchTeamMap() {
 function extractStats(categories = []) {
   const m = {};
   for (const cat of categories) {
-    for (const s of cat.stats || []) m[s.name] = parseFloat(s.value) ?? 0;
+    for (const s of cat.stats || []) { const value = Number(s.value); m[s.name] = Number.isFinite(value) ? value : 0; }
   }
   return {
     pts:  m.points                   ?? 0,
@@ -86,10 +86,10 @@ async function fetchGameStats(items, teamMap, batchSize = 40) {
     const batchResults = await Promise.all(batch.map(async item => {
       try {
         const [statsData, compInfo] = await Promise.all([
-          espnGet(item.statistics.$ref),
-          resolveCompetition(item.competition.$ref, item.teamId, teamMap),
+          item.statistics?.$ref ? espnGet(item.statistics.$ref) : Promise.resolve(null),
+          item.competition?.$ref ? resolveCompetition(item.competition.$ref, item.teamId, teamMap) : Promise.resolve({ _date:'', _opp:'', win:false, _isHome:false }),
         ]);
-        return { ...extractStats(statsData.splits?.categories), ...compInfo };
+        return { ...extractStats(statsData?.splits?.categories || []), ...compInfo };
       } catch { return null; }
     }));
     results.push(...batchResults);
