@@ -121,7 +121,7 @@
     @media (max-width:600px){.board-filters{grid-template-columns:1fr 1fr}.props-table th:nth-child(4),.props-table td:nth-child(4){display:none}.rate-bar{width:36px}}
     .desktop-only{display:block;}
     @media (max-width:900px){.shell-body{grid-template-columns:1fr}.filter-rail{position:static}.desktop-only{display:none}.main-panel{width:100%}.topbar{top:8px}.app-shell{max-width:760px}}
-    @media (max-width:600px){body{font-size:13px}.topbar{gap:8px;padding:8px;top:0;border-radius:0 0 var(--radius-card) var(--radius-card);margin:0 -8px 12px}.wordmark{font-size:16px}.global-search{max-width:none}.topbar-nav{display:none}.mobile-tabs{position:sticky;display:grid;grid-template-columns:repeat(3,1fr);gap:4px;bottom:0;z-index:30;margin:16px -8px -8px;padding:8px;background:rgba(13,17,20,.96);border-top:1px solid var(--border);backdrop-filter:blur(14px)}.mobile-tabs button{min-height:44px;background:transparent;border:1px solid transparent;border-radius:var(--radius-control);color:var(--text-secondary);font-size:11px}.mobile-tabs button.active{color:var(--brand);background:rgba(0,220,110,.1);border-color:rgba(0,220,110,.28)}.card{padding:14px}.stat-grid-4{grid-template-columns:repeat(2,1fr)}}
+    @media (max-width:600px){body{font-size:13px}.topbar{gap:8px;padding:8px;top:0;border-radius:0 0 var(--radius-card) var(--radius-card);margin:0 -8px 12px}.wordmark{font-size:16px}.global-search{max-width:none}.topbar-nav{display:none}.mobile-tabs{position:static;display:grid;grid-template-columns:repeat(3,1fr);gap:4px;order:3;flex:0 0 100%;margin:0;padding:4px 0 0;background:transparent;border:0}.mobile-tabs button{min-height:40px;background:transparent;border:1px solid transparent;border-radius:var(--radius-control);color:var(--text-secondary);font-size:11px}.mobile-tabs button.active{color:var(--brand);background:rgba(0,220,110,.1);border-color:rgba(0,220,110,.28)}.card{padding:14px}.stat-grid-4{grid-template-columns:repeat(2,1fr)}}
     @media (max-width:600px){.topbar{flex-wrap:wrap}.wordmark{flex:0 0 auto}.global-search{flex:1 1 140px;min-width:0}.global-search input{font-size:12px;padding-left:32px}.quick-research-drawer{padding:16px 10px}.quick-research-drawer .drawer-head{margin-bottom:14px}.quick-research-drawer .last10-chart-shell{padding-left:24px;padding-right:24px}.quick-research-drawer .last10-chart{height:180px}.quick-research-drawer .dense-chart-shell{padding-bottom:54px}.quick-research-drawer .dense-chart .last10-value,.quick-research-drawer .dense-chart .last10-label{font-size:6px}.quick-research-drawer .last10-axis{font-size:9px}.last10-chart-shell{padding-left:24px;padding-right:24px}.dense-chart .last10-value{font-size:6px}.dense-chart .last10-label{font-size:6px}.line-control{width:100%}.line-control .step-btn{min-width:40px}.ou-btn{min-height:44px}.pp-line-card{align-items:flex-start}.pp-line-card .sport-btn{flex:0 0 auto}}
     @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important;}}
   </style>
@@ -804,12 +804,16 @@ function App(){
       return isMLB?statList[statIdx].calc(d.stat):statList[statIdx].calc(d);
     }catch{return null;}
   };
-  const recentG=isMLB?[...gameLog,...carLog]:gameLog;
+  const mergeGameLogs=(...logs)=>{const seen=new Set();return logs.flat().filter(g=>{const key=[g._date||'',g._opp||'',g.pts??'',g.reb??'',g.ast??'',g.passYds??'',g.rushYds??'',g.recYds??''].join('|');if(seen.has(key))return false;seen.add(key);return true;});};
+  // NBA/WNBA season logs are intentionally short at the start of a season.
+  // Merge them with career history so L5/L10/L30 always mean the player's
+  // actual most recent games, while SEASON remains the current season only.
+  const recentG=(isMLB||isNBA||isWNBA)?mergeGameLogs(gameLog,carLog):gameLog;
   const l5=hasData?hitRate(recentG.slice(0,5),getVal,lineNum,ou):null;
   const l10=hasData?hitRate(recentG.slice(0,10),getVal,lineNum,ou):null;
   const l30=hasData?hitRate(recentG.slice(0,30),getVal,lineNum,ou):null;
   const seasonR=hasData?hitRate(gameLog,getVal,lineNum,ou):null;
-  const careerAllG=(isNFL||isCFB||isNHL||isWNBA||isNBA||isMLB)?[...gameLog,...carLog]:carLog;
+  const careerAllG=(isNFL||isCFB||isNHL||isWNBA||isNBA||isMLB)?mergeGameLogs(gameLog,carLog):carLog;
   const _rawLogGames=(isNFL||isCFB||isNHL||isWNBA||isNBA)?careerAllG:gameLog;
   const logGames=isTennis&&tennisBo?_rawLogGames.filter(g=>g.bestOf===tennisBo):_rawLogGames;
   const h2hG=hasData&&h2hAct?logGames.filter(g=>(g._opp||"").toLowerCase().includes(h2hAct.toLowerCase())):[];
@@ -826,7 +830,7 @@ function App(){
   const logSlice=logGames.slice(logPage*LOG_PER_PAGE,(logPage+1)*LOG_PER_PAGE);
   const careerR=careerAllG.length>0?hitRate(careerAllG,getCV,lineNum,ou):null;
   const h2hR=h2hG.length?hitRate(h2hG,getVal,lineNum,ou):null;
-  const splitGames=(isNFL||isCFB||isNHL||isWNBA||isNBA)?[...gameLog,...carLog]:gameLog;
+  const splitGames=(isNFL||isCFB||isNHL||isWNBA||isNBA)?careerAllG:gameLog;
   const homeG=hasData?splitGames.filter(g=>g._isHome):[];
   const awayG=hasData?splitGames.filter(g=>!g._isHome):[];
   const homeR=homeG.length?hitRate(homeG,getVal,lineNum,ou):null;
@@ -876,7 +880,12 @@ function App(){
           {globalSearchErr&&<div style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,zIndex:50,padding:"8px 10px",background:"var(--surface-1)",border:"1px solid rgba(255,77,77,.35)",borderRadius:4,color:"var(--danger)",fontSize:10}}>{globalSearchErr}</div>}
         </div>
         <nav className="topbar-nav" aria-label="Primary navigation">
-          <button className={navTab==='props'?'active':''} onClick={()=>selectNav('props')}>Props</button>
+          <button className={navTab==='props'?'active':''} onClick={()=>selectNav('props')}>Trending</button>
+          <button className={navTab==='check'?'active':''} onClick={()=>selectNav('check')}>Check Player</button>
+          <button className={navTab==='saved'?'active':''} onClick={()=>selectNav('saved')}>Saved</button>
+        </nav>
+        <nav className="mobile-tabs" aria-label="Mobile navigation">
+          <button className={navTab==='props'?'active':''} onClick={()=>selectNav('props')}>Trending</button>
           <button className={navTab==='check'?'active':''} onClick={()=>selectNav('check')}>Check Player</button>
           <button className={navTab==='saved'?'active':''} onClick={()=>selectNav('saved')}>Saved</button>
         </nav>
@@ -899,7 +908,7 @@ function App(){
       </div>
 
       {/* Sport */}
-      <div className="card"><div className="label-sm">SPORT</div><div style={{display:"flex",flexWrap:"wrap",gap:4}}><button className={"sport-btn"+(mode==="trending"?" active":"")} style={{flex:"1 1 auto",background:mode==="trending"?"rgba(255,200,0,0.15)":"transparent",borderColor:mode==="trending"?"var(--amber)":"rgba(255,255,255,0.1)",color:mode==="trending"?"var(--amber)":"rgba(255,255,255,0.4)"}} onClick={()=>setMode(mode==="trending"?"check":"trending")}>TRENDING</button>
+      <div className="card"><div className="label-sm">SPORT</div><div style={{display:"flex",flexWrap:"wrap",gap:4}}>{mode==='trending'&&<button className={"sport-btn active"} style={{flex:"1 1 auto",background:"rgba(255,200,0,0.15)",borderColor:"var(--amber)",color:"var(--amber)"}} onClick={()=>setMode("check")}>TRENDING</button>}
           <button className={"sport-btn"+(sport==="MLB"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>{setMode("check");setSport("MLB");}}>MLB</button><button className={"sport-btn"+(sport==="NFL"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("NFL")}>NFL</button><button className={"sport-btn"+(sport==="CFB"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("CFB")}>CFB</button><button className={"sport-btn"+(sport==="NHL"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("NHL")}>NHL</button><button className={"sport-btn"+(sport==="WNBA"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("WNBA")}>WNBA</button><button className={"sport-btn"+(sport==="NBA"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("NBA")}>NBA</button><button className={"sport-btn"+(sport==="TENNIS"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("TENNIS")}>TENNIS</button><button className={"sport-btn"+(sport==="ESPORTS"?" active":"")} style={{flex:"1 1 auto"}} onClick={()=>setSport("ESPORTS")}>ESPORTS</button></div></div>
 
       {/* ─── TRENDING VIEW ──────────────────────────────────────────────────── */}
@@ -1191,11 +1200,6 @@ function App(){
         </main>
       </div>
       <footer style={{padding:'16px 4px 4px',textAlign:'center',fontSize:10,color:'var(--text-muted)'}}>Data sources: PrizePicks lines and provider game logs when available. Not financial advice. <a href="https://theevcave.com/tools" style={{color:'var(--brand)'}}>The +EV Cave</a></footer>
-      <nav className="mobile-tabs" aria-label="Mobile navigation">
-        <button className={navTab==='props'?'active':''} onClick={()=>selectNav('props')}>Props</button>
-        <button className={navTab==='check'?'active':''} onClick={()=>selectNav('check')}>Check Player</button>
-        <button className={navTab==='saved'?'active':''} onClick={()=>selectNav('saved')}>Saved</button>
-      </nav>
     </div>
     </div>
   );
