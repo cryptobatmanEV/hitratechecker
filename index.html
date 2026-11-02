@@ -476,6 +476,7 @@ function App(){
   const [h2hIn,setH2hIn]   =useState("");
   const [h2hAct,setH2hAct] =useState("");
   const [chartMode,setChartMode]=useState("last10");
+  const [chartRange,setChartRange]=useState("last10");
   const [loading,setLoad]   =useState(false);
   const [error,setError]    =useState("");
   const [debug,setDebug]    =useState("");
@@ -527,7 +528,7 @@ function App(){
   const prizePicksSport=isMLB?'mlb':isNFL?'nfl':isCFB?'cfb':isNHL?'nhl':isWNBA?'wnba':isNBA?'nba':isTennis?'tennis':isES?(esGame==='dota2'?'dota':esGame):null;
   const activeStatLabel=statList[statIdx]?.label||'';
 
-  const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setH2hIn("");setH2hAct("");setChartMode("last10");setOppTmId(null);setOppTm("");setLogPage(0);setWnbaNextOpp(null);};
+  const clearAll=()=>{setPlayer(null);setGameLog([]);setCarLog([]);setError("");setDebug("");setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);setPitcher(null);setPitchQ("");setPInfo(null);setStatIdx(0);setH2hIn("");setH2hAct("");setChartMode("last10");setChartRange("last10");setOppTmId(null);setOppTm("");setLogPage(0);setWnbaNextOpp(null);};
   useEffect(()=>{clearAll();setMapScope("total");setTennisBo(0);},[sport,mlbGrp,esGame]);
   useEffect(()=>{if(isMLB){setGLoad(true);getTodayGames().then(g=>setToday(g)).catch(()=>{}).finally(()=>setGLoad(false));}},[sport]);
   useEffect(()=>{const h=e=>{if(pWrap.current&&!pWrap.current.contains(e.target))setShowPD(false);};document.addEventListener("mousedown",h);return()=>document.removeEventListener("mousedown",h);},[]); 
@@ -578,7 +579,7 @@ function App(){
   useEffect(()=>{const onKey=e=>{if(e.key==='Escape')setSelectedTrend(null);};document.addEventListener('keydown',onKey);return()=>document.removeEventListener('keydown',onKey);},[]);
 
   const onSelectPlayer=async p=>{
-    setPlayer(p);setGameLog([]);setCarLog([]);setError("");setVsP(null);setVsT(null);setHands(null);setDayNt(null);setCarSt(null);setPitcher(null);setPitchQ("");setPInfo(null);setOppTmId(null);setOppTm("");setWnbaNextOpp(null);
+    setPlayer(p);setGameLog([]);setCarLog([]);setError("");setVsP(null);setVsT(null);setHands(null);setDayNt(null);setCarSt(null);setPitcher(null);setPitchQ("");setPInfo(null);setOppTmId(null);setOppTm("");setWnbaNextOpp(null);setChartMode("last10");setChartRange("last10");
     if(isMLB&&todayGames.length>0){
       try{
         const info=await getPlayerInfo(p.id);const tid=info.teamId;
@@ -748,8 +749,10 @@ function App(){
   const _rawLogGames=(isNFL||isCFB||isNHL||isWNBA||isNBA)?careerAllG:gameLog;
   const logGames=isTennis&&tennisBo?_rawLogGames.filter(g=>g.bestOf===tennisBo):_rawLogGames;
   const h2hG=hasData&&h2hAct?logGames.filter(g=>(g._opp||"").toLowerCase().includes(h2hAct.toLowerCase())):[];
-  const chartGames=(chartMode==='h2h'&&h2hAct?h2hG:recentG).slice(0,10).reverse();
+  const chartSource=chartMode==='h2h'&&h2hAct?h2hG:chartRange==='last5'?recentG.slice(0,5):chartRange==='last30'?recentG.slice(0,30):chartRange==='season'?gameLog:recentG.slice(0,10);
+  const chartGames=chartSource.slice(0,chartMode==='h2h'?10:chartSource.length).reverse();
   const chartMax=Math.max(lineNum||0,...chartGames.map(g=>Number(getVal(g))||0),1);
+  const chartMid=Math.max(1,Math.round(chartMax/2));
   const LOG_PER_PAGE=30;
   const logPageCount=Math.ceil(logGames.length/LOG_PER_PAGE);
   const logSlice=logGames.slice(logPage*LOG_PER_PAGE,(logPage+1)*LOG_PER_PAGE);
@@ -1038,13 +1041,19 @@ function App(){
 
         <div className="card">
           <div className="sec-title">{playerName} · {statList[statIdx]?.label} {ou==="over"?"Over":"Under"} {lineNum}<span style={{marginLeft:8,fontSize:10,color:"rgba(255,255,255,0.3)",fontWeight:400}}>({logGames.length} games)</span></div>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginTop:16}}><div className="sec-title" style={{margin:0}}>{chartMode==='h2h'&&h2hAct?`H2H · ${h2hAct.toUpperCase()}`:"LAST 10 GAMES"}</div>{chartMode==='h2h'&&<button className="sport-btn" style={{borderRadius:2,padding:"4px 10px",fontSize:10}} onClick={()=>setChartMode("last10")}>SHOW LAST 10</button>}</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginTop:16,flexWrap:"wrap"}}>
+            <div className="sec-title" style={{margin:0}}>{chartMode==='h2h'&&h2hAct?`H2H · ${h2hAct.toUpperCase()}`:chartRange==='last5'?"LAST 5 GAMES":chartRange==='last30'?"LAST 30 GAMES":chartRange==='season'?"SEASON":"LAST 10 GAMES"}</div>
+            <div style={{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"flex-end"}}>
+              {[['last5','L5'],['last10','L10'],['last30','L30'],['season','SEASON']].map(([key,label])=><button key={key} className={`sport-btn ${chartMode!=='h2h'&&chartRange===key?'active':''}`} style={{borderRadius:2,padding:"4px 9px",fontSize:10}} onClick={()=>{setChartRange(key);setChartMode("last10");}}>{label}</button>)}
+              {(h2hAct||wnbaNextOpp?.opp)&&<button className={`sport-btn ${chartMode==='h2h'?'active':''}`} style={{borderRadius:2,padding:"4px 9px",fontSize:10}} onClick={()=>{const opp=wnbaNextOpp?.opp||h2hAct;setH2hIn(opp);setH2hAct(opp);setChartMode("h2h");}}>H2H{wnbaNextOpp?.opp?` · ${wnbaNextOpp.opp}`:""}</button>}
+            </div>
+          </div>
           <div className="last10-chart-shell" aria-label={chartMode==='h2h'&&h2hAct?`Head to head games against ${h2hAct}`:`Last 10 games for ${playerName} ${statLabel}`}>
-            <div className="last10-axis last10-axis-left" aria-hidden="true"><span>{chartMax}</span><span>{Math.ceil(chartMax/2)}</span><span>0</span></div>
-            <div className="last10-chart" aria-label={`Last 10 games for ${playerName} ${statLabel}`}>
+            <div className="last10-axis last10-axis-left" aria-hidden="true"><span>{chartMax}</span><span>{chartMid}</span><span>0</span></div>
+            <div className="last10-chart" aria-label={`${chartMode==='h2h'?'Head to head':chartRange} games for ${playerName} ${statLabel}`}>
               {chartGames.map((game,i)=>{const value=getVal(game);const valid=value!=null&&!Number.isNaN(Number(value));const hit=valid&&(ou==='over'?value>lineNum:value<lineNum);return <div className="last10-bar-wrap" key={i}><div className={`last10-bar ${valid?(hit?'hit':'miss'):''}`} style={{height:`${valid?Math.max(5,Math.min(100,(Number(value)/chartMax)*100)):5}%`}}/><span className="last10-value">{valid?value:' '}</span><span className="last10-label">{(game._date||'').toString().slice(5,10)}</span></div>;})}
             </div>
-            <div className="last10-axis last10-axis-right" aria-hidden="true"><span>{chartMax}</span><span>{Math.ceil(chartMax/2)}</span><span>0</span></div>
+            <div className="last10-axis last10-axis-right" aria-hidden="true"><span>{chartMax}</span><span>{chartMid}</span><span>0</span></div>
           </div>
           <div style={{fontSize:10,color:'var(--text-muted)',margin:'18px 0 8px'}}>Bars show actual game-log values against the selected line. Green cleared it, red did not.</div>
           <div style={{display:"flex",gap:6,marginBottom:8}}><RateCard label="L5" data={l5}/><RateCard label="L10" data={l10}/><RateCard label="L30" data={l30}/><RateCard label="SEASON" data={seasonR}/></div>
@@ -1068,11 +1077,11 @@ function App(){
             <div style={{fontSize:13,fontWeight:600,color:"var(--text)"}}>{wnbaNextOpp.isHome?"vs":"@"} {wnbaNextOpp.opp}</div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{wnbaNextOpp.date}</span>
-              <button className={`sport-btn ${chartMode==='h2h'?'active':''}`} style={{borderRadius:2,padding:"2px 10px",fontSize:10}} disabled={!h2hG.length} onClick={()=>{setH2hIn(wnbaNextOpp.opp);setH2hAct(wnbaNextOpp.opp);setChartMode("h2h");}}>{chartMode==='h2h'?"H2H ACTIVE":"VIEW H2H CHART"}</button>
+              <button className={`sport-btn ${chartMode==='h2h'?'active':''}`} style={{borderRadius:2,padding:"2px 10px",fontSize:10}} onClick={()=>{setH2hIn(wnbaNextOpp.opp);setH2hAct(wnbaNextOpp.opp);setChartMode("h2h");}}>{chartMode==='h2h'?"H2H ACTIVE":"VIEW H2H CHART"}</button>
             </div>
           </div>
         </div>}
-        <div className="card"><div className="label-sm">H2H OPPONENT FILTER</div><div style={{display:"flex",gap:8}}><input className="tool-input" type="text" placeholder="Team or opponent name" value={h2hIn} onChange={e=>setH2hIn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&setH2hAct(h2hIn.trim())} style={{flex:1}}/><button className="sport-btn active" style={{flex:"0 0 auto",borderRadius:2,padding:"0 16px"}} onClick={()=>setH2hAct(h2hIn.trim())}>APPLY</button>{h2hAct&&<button className="sport-btn" style={{flex:"0 0 auto",borderRadius:2,padding:"0 12px",color:"var(--danger)",borderColor:"rgba(255,77,77,0.3)"}} onClick={()=>{setH2hAct("");setH2hIn("");setChartMode("last10");}}>CLEAR</button>}</div>{h2hAct&&<div style={{marginTop:8,fontSize:11,color:h2hG.length?"var(--brand)":"rgba(255,77,77,0.7)"}}>{h2hG.length?`${h2hG.length} games vs "${h2hAct}"`:`No games found vs "${h2hAct}"`}</div>}</div>
+        <div className="card"><div className="label-sm">H2H OPPONENT FILTER</div><div style={{display:"flex",gap:8}}><input className="tool-input" type="text" placeholder="Team or opponent name" value={h2hIn} onChange={e=>setH2hIn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&setH2hAct(h2hIn.trim())} style={{flex:1}}/><button className="sport-btn active" style={{flex:"0 0 auto",borderRadius:2,padding:"0 16px"}} onClick={()=>{setH2hAct(h2hIn.trim());setChartMode("h2h");}}>VIEW H2H</button>{h2hAct&&<button className="sport-btn" style={{flex:"0 0 auto",borderRadius:2,padding:"0 12px",color:"var(--danger)",borderColor:"rgba(255,77,77,0.3)"}} onClick={()=>{setH2hAct("");setH2hIn("");setChartMode("last10");}}>CLEAR</button>}</div>{h2hAct&&<div style={{marginTop:8,fontSize:11,color:h2hG.length?"var(--brand)":"rgba(255,77,77,0.7)"}}>{h2hG.length?`${h2hG.length} games vs "${h2hAct}"`:`No games found vs "${h2hAct}"`}</div>}</div>
 
         {isCS2&&(statList[statIdx]?.label==="Headshots"||statList[statIdx]?.label==="HS %")&&<div style={{background:"rgba(255,165,0,0.06)",border:"1px solid rgba(255,165,0,0.2)",borderRadius:4,padding:"10px 14px",fontSize:11,color:"rgba(255,200,100,0.8)",marginBottom:8}}>HS data is sourced from GRID's official broadcast feed. Some events may not be covered. Affected matches show 0. This is a data availability limitation, not a reflection of the player's actual stats.</div>}
         <div className="card"><div className="sec-title">Game Log</div>
