@@ -641,6 +641,7 @@ export default async function handler(req, res) {
           team:       pl.team,
           stat:       p.attributes?.stat_type,
           line:       parseFloat(p.attributes?.line_score)||0,
+          oddsType:   odds,
           allowOver:  true,             // all prop types allow over
           allowUnder: odds==='standard', // only standard allows under
           isCombo:    combo,
@@ -674,12 +675,14 @@ export default async function handler(req, res) {
       const lookupPlayer = (req.query.player || '').toString().trim().toLowerCase();
       const lookupStat = (req.query.stat || '').toString().trim().toLowerCase();
       if (!lookupPlayer || !lookupStat) return res.status(400).json({ error:'Player and stat are required' });
-      const matches = projs.filter(p => p.name.toLowerCase().includes(lookupPlayer) && p.stat.toLowerCase().includes(lookupStat));
+      // Check a Player must show the canonical PrizePicks board line only.
+      // Demon/goblin and other alternate entries are intentionally excluded.
+      const matches = projs.filter(p => p.oddsType === 'standard' && p.name.toLowerCase().includes(lookupPlayer) && p.stat.toLowerCase() === lookupStat);
       return res.json({
         sport,
         player: req.query.player,
         stat: req.query.stat,
-        matches: matches.slice(0, 10).map(p => ({ player:p.name, team:p.team, stat:p.stat, line:p.line, direction:p.allowUnder?'over/under':'over only' })),
+        matches: matches.slice(0, 10).map(p => ({ player:p.name, team:p.team, stat:p.stat, line:p.line, direction:'over/under', lineType:'standard' })),
         updated: new Date().toISOString(),
       });
     }
