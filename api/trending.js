@@ -144,6 +144,22 @@ function resolveStatFn(sport, statType) {
   return null;
 }
 
+const STAT_ALIASES = {
+  pra: ['pra','ptsrebsasts','pointsreboundsassists','pts+rebs+asts','pts rebs asts'],
+  pr:  ['pr','ptsrebs','pointsrebounds','pts+rebs','pts rebs'],
+  pa:  ['pa','ptsasts','pointsassists','pts+asts','pts asts'],
+  ra:  ['ra','rebsasts','reboundsassists','rebs+asts','rebs asts'],
+  '3pointers': ['3pointers','3ptmade','threepointers','threepointfieldgoalsmade'],
+  ftmade: ['ftmade','freethrowsmade','free throwsmade'],
+  ftattempted: ['ftattempted','ftattempts','freethrowsattempted','freethrowsattempts']
+};
+function normalizedStat(value) { return String(value||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function sameStat(a,b) {
+  const left=normalizedStat(a),right=normalizedStat(b);
+  if(left===right)return true;
+  return Object.values(STAT_ALIASES).some(group=>group.map(normalizedStat).includes(left)&&group.map(normalizedStat).includes(right));
+}
+
 // ── GRID helpers (CS2 — free, no ScraperAPI) ──────────────────────────────────
 // GRID: two separate APIs, x-api-key auth (NOT Bearer, NOT api.grid.gg)
 const CD = 'https://api-op.grid.gg/central-data/graphql';
@@ -673,11 +689,11 @@ export default async function handler(req, res) {
 
     if (action === 'line') {
       const lookupPlayer = (req.query.player || '').toString().trim().toLowerCase();
-      const lookupStat = (req.query.stat || '').toString().trim().toLowerCase();
+      const lookupStat = (req.query.stat || '').toString().trim();
       if (!lookupPlayer || !lookupStat) return res.status(400).json({ error:'Player and stat are required' });
       // Check a Player must show the canonical PrizePicks board line only.
       // Demon/goblin and other alternate entries are intentionally excluded.
-      const matches = projs.filter(p => p.oddsType === 'standard' && p.name.toLowerCase().includes(lookupPlayer) && p.stat.toLowerCase() === lookupStat);
+      const matches = projs.filter(p => p.oddsType === 'standard' && p.name.toLowerCase().includes(lookupPlayer) && sameStat(p.stat, lookupStat));
       return res.json({
         sport,
         player: req.query.player,
