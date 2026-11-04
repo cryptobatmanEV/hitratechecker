@@ -663,7 +663,7 @@ export default async function handler(req, res) {
           isCombo:    combo,
         };
       })
-      .filter(p=>p.name&&p.stat&&p.line>0&&!p.isCombo&&resolveStatFn(sport,p.stat));
+      .filter(p=>p.name&&p.stat&&p.line>0&&resolveStatFn(sport,p.stat));
 
     // Debug: what types are in included? Helps find esports player type key
     const includedTypes = [...new Set((ppData.included||[]).map(i=>i.type))];
