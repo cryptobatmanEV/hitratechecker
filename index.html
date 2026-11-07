@@ -1217,3 +1217,11 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
 </html>
+
+
+<style>
+/* PropScope polish: selected controls and subtle neon workspace backdrop */
+body{background:radial-gradient(900px 520px at 78% 18%,rgba(0,224,120,.10),transparent 62%),linear-gradient(135deg,rgba(0,224,120,.035),transparent 42%),var(--bg,#07090b)!important;}
+.sport-btn.active,.sport-btn.selected,.tab-btn.active,.tab-btn.selected,.period-btn.active,.period-btn.selected,.filter-btn.active,.filter-btn.selected,button.active,button.selected,[aria-selected="true"],[aria-pressed="true"]{color:#00e07a!important;background:linear-gradient(180deg,rgba(0,224,120,.16),rgba(0,224,120,.06))!important;border-color:#00e07a!important;box-shadow:0 0 0 1px rgba(29,255,160,.62),0 0 12px rgba(0,224,120,.50),0 0 28px rgba(0,224,120,.22),inset 0 0 16px rgba(0,224,120,.10)!important;text-shadow:0 0 8px rgba(29,255,160,.48)!important;}
+.sport-btn:hover,.tab-btn:hover,.period-btn:hover,.filter-btn:hover{box-shadow:0 0 0 1px rgba(29,255,160,.32),0 0 10px rgba(0,224,120,.22)!important;}
+</style>
