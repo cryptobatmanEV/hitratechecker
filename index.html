@@ -665,8 +665,8 @@ function App(){
 
   const canCheck=player!=null&&line&&!isNaN(parseFloat(line));
 
-  const checkHistory=async(overrideLine)=>{
-    const requestedLine=overrideLine??line;if(!player||!requestedLine||isNaN(parseFloat(requestedLine))){setError(!player?"Select a player before checking history.":"Enter a numeric projection line before checking history.");return;}
+  const checkHistory=async(overrideLine,allowNoLine=false)=>{
+    const requestedLine=overrideLine??line;if(!player||(!allowNoLine&&(!requestedLine||isNaN(parseFloat(requestedLine))))){setError(!player?"Select a player before checking history.":"Enter a numeric projection line before checking history.");return;}
     if(overrideLine!=null)setLine(String(overrideLine));
     setLoad(true);setError("");setDebug("Fetching data...");
     setGameLog([]);setCarLog([]);setCarSt(null);setVsP(null);setVsT(null);setHands(null);setDayNt(null);
@@ -755,8 +755,13 @@ function App(){
     setQuickSearchPending(false);setLine(String(ppLine.line));setQuickOpen(true);checkHistory(ppLine.line);
   },[quickSearchPending,player?.id,ppLine?.line]);
 
+  const changeQuickStat=idx=>{
+    setStatIdx(idx);setStatQuery(statList[idx]?.label||"");setLine("");setPpLine(null);setPpLineErr("");setGameLog([]);setCarLog([]);setError("");setDebug("");setQuickOpen(true);
+    setTimeout(()=>checkHistory(undefined,true),0);
+  };
+
   const lineNum=parseFloat(line);
-  const hasData=gameLog.length>0&&statList[statIdx]&&!isNaN(lineNum);
+  const hasData=gameLog.length>0&&statList[statIdx]&&(!isNaN(lineNum)||quickOpen);
   const resolveG=g=>{
     if(!isES||mapScope==="total")return g;
     if(mapScope==="1+2"){
@@ -822,7 +827,7 @@ function App(){
   const h2hG=hasData&&h2hAct?logGames.filter(g=>(g._opp||"").toLowerCase().includes(h2hAct.toLowerCase())):[];
   const chartSource=chartMode==='h2h'&&h2hAct?h2hG:chartRange==='last5'?recentG.slice(0,5):chartRange==='last30'?recentG.slice(0,30):chartRange==='season'?gameLog:recentG.slice(0,10);
   const chartGames=chartSource.slice(0,chartMode==='h2h'?10:chartSource.length).reverse();
-  const chartMax=Math.max(lineNum||0,...chartGames.map(g=>Number(getVal(g))||0),1);
+  const chartMax=Math.max(Number.isFinite(lineNum)?lineNum:0,...chartGames.map(g=>Number(getVal(g))||0),1);
   const chartMid=Math.max(1,Math.round(chartMax/2));
   // The marker is positioned with CSS `bottom` inside a 170px chart whose
   // actual bar plot is 150px tall after its 20px top padding.
@@ -869,11 +874,11 @@ function App(){
     <div style={{minHeight:"100vh",background:"var(--bg)",backgroundImage:"radial-gradient(ellipse at 20% 0%,rgba(0,200,100,0.05) 0%,transparent 50%)",padding:"12px 16px 24px",display:"flex",justifyContent:"center"}}>
     <div className="app-shell">
       {quickOpen&&hasData&&<><div className="drawer-backdrop" onClick={()=>{setQuickOpen(false);clearAll();setGlobalQ('');}}/><aside className="detail-drawer quick-research-drawer" aria-label="Quick player research">
-        <div className="drawer-head"><div><div className="label-sm">PLAYER RESEARCH</div><h2 style={{fontSize:24,lineHeight:1.2}}>{playerName}</h2><div style={{color:"var(--text-muted)",fontSize:12,marginTop:4}}>{activeStatLabel} · {ou.toUpperCase()} {lineNum}</div></div><button className="drawer-close" onClick={()=>{setQuickOpen(false);clearAll();setGlobalQ('');}}>Close</button></div>
-        <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:14}}>{[['last5','L5'],['last10','L10'],['last30','L30'],['season','SEASON']].map(([key,label])=><button key={key} className={`sport-btn ${chartMode!=='h2h'&&chartRange===key?'active':''}`} style={{borderRadius:2,padding:"5px 8px",fontSize:10}} onClick={()=>{setChartRange(key);setChartMode("last10");}}>{label}</button>)}{h2hAct&&<button className={`sport-btn ${chartMode==='h2h'?'active':''}`} style={{borderRadius:2,padding:"5px 8px",fontSize:10}} onClick={()=>setChartMode("h2h")}>H2H</button>}</div>
+        <div className="drawer-head"><div><div className="label-sm">PLAYER RESEARCH</div><h2 style={{fontSize:24,lineHeight:1.2}}>{playerName}</h2><div style={{color:"var(--text-muted)",fontSize:12,marginTop:4}}>{activeStatLabel}{Number.isFinite(lineNum)?` · ${ou.toUpperCase()} ${lineNum}`:""}</div></div><button className="drawer-close" onClick={()=>{setQuickOpen(false);clearAll();setGlobalQ('');}}>Close</button></div>
+        <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:14}}>{[['last5','L5'],['last10','L10'],['last30','L30'],['season','SEASON']].map(([key,label])=><button key={key} className={`sport-btn ${chartMode!=='h2h'&&chartRange===key?'active':''}`} style={{borderRadius:2,padding:"5px 8px",fontSize:10}} onClick={()=>{setChartRange(key);setChartMode("last10");}}>{label}</button>)}<select className="stat-select" value={statIdx} onChange={e=>changeQuickStat(parseInt(e.target.value))} style={{width:"auto",minWidth:112,padding:"6px 24px 6px 8px",fontSize:10}} aria-label="Choose another stat">{statList.map((s,i)=><option key={i} value={i}>{s.label}</option>)}</select>{h2hAct&&<button className={`sport-btn ${chartMode==='h2h'?'active':''}`} style={{borderRadius:2,padding:"5px 8px",fontSize:10}} onClick={()=>setChartMode("h2h")}>H2H</button>}</div>
         <div className="sec-title">{chartMode==='h2h'&&h2hAct?`H2H · ${h2hAct.toUpperCase()}`:chartRange==='last5'?"LAST 5 GAMES":chartRange==='last30'?"LAST 30 GAMES":chartRange==='season'?"SEASON":"LAST 10 GAMES"}</div>
-        <div className={`last10-chart-shell ${chartGames.length>14?'dense-chart-shell':''}`} style={{marginTop:8}}><div className="last10-axis last10-axis-left" aria-hidden="true"><span>{chartMax}</span><span>{chartMid}</span><span>0</span></div><div className="last10-chart-scroll"><div className={`last10-chart ${chartGames.length>14?'dense-chart':''}`}><div className="projection-marker" style={{bottom:`max(0px,calc(${linePct}% - 20px))`}}><span>LINE {lineNum}</span></div>{chartGames.map((game,i)=>{const value=getVal(game);const valid=value!=null&&!Number.isNaN(Number(value));const hit=valid&&(ou==='over'?value>lineNum:value<lineNum);const barHeight=valid?Math.max(5,Math.min(100,(Number(value)/chartMax)*100)):5;return <div className="last10-bar-wrap" key={i}><div className={`last10-bar ${valid?(hit?'hit':'miss'):''}`} style={{height:`${barHeight}%`}}/><span className="last10-value" style={{bottom:`calc(${barHeight}% + 4px)`}}>{valid?value:' '}</span><span className="last10-label" title={(game._date||'').toString().slice(0,10)}>{(game._date||'').toString().slice(5,10)}</span></div>;})}</div></div><div className="last10-axis last10-axis-right" aria-hidden="true"><span>{chartMax}</span><span>{chartMid}</span><span>0</span></div></div>
-        <div style={{fontSize:10,color:"var(--text-muted)",marginTop:18}}>Green cleared the line; red did not. Season dates fit in the chart.</div>
+        <div className={`last10-chart-shell ${chartGames.length>14?'dense-chart-shell':''}`} style={{marginTop:8}}><div className="last10-axis last10-axis-left" aria-hidden="true"><span>{chartMax}</span><span>{chartMid}</span><span>0</span></div><div className="last10-chart-scroll"><div className={`last10-chart ${chartGames.length>14?'dense-chart':''}`}>{Number.isFinite(lineNum)&&<div className="projection-marker" style={{bottom:`max(0px,calc(${linePct}% - 20px))`}}><span>LINE {lineNum}</span></div>}{chartGames.map((game,i)=>{const value=getVal(game);const valid=value!=null&&!Number.isNaN(Number(value));const hasLine=Number.isFinite(lineNum);const hit=valid&&hasLine&&(ou==='over'?value>lineNum:value<lineNum);const barHeight=valid?Math.max(5,Math.min(100,(Number(value)/chartMax)*100)):5;return <div className="last10-bar-wrap" key={i}><div className={`last10-bar ${valid?(hasLine?(hit?'hit':'miss'):''):''}`} style={{height:`${barHeight}%`}}/><span className="last10-value" style={{bottom:`calc(${barHeight}% + 4px)`}}>{valid?value:' '}</span><span className="last10-label" title={(game._date||'').toString().slice(0,10)}>{(game._date||'').toString().slice(5,10)}</span></div>;})}</div></div><div className="last10-axis last10-axis-right" aria-hidden="true"><span>{chartMax}</span><span>{chartMid}</span><span>0</span></div></div>
+        <div style={{fontSize:10,color:"var(--text-muted)",marginTop:18}}>{Number.isFinite(lineNum)?"Green cleared the line; red did not. Season dates fit in the chart.":"No current PrizePicks line for this category; showing game values without a marker."}</div>
       </aside></>}
       <header className="topbar">
         <div className="wordmark">PROP<span style={{color:"var(--brand)"}}>SCOPE</span></div>
