@@ -96,7 +96,7 @@
     .topbar-nav{display:flex;gap:4px;margin-left:auto;}
     .topbar-nav button{min-height:40px;padding:8px 12px;background:transparent;border:1px solid transparent;border-radius:var(--radius-control);color:var(--text-secondary);cursor:pointer;font-size:12px;}
     .topbar-nav button.active{background:rgba(0,220,110,.1);border-color:rgba(0,220,110,.28);color:var(--brand);}
-    .shell-body{display:grid;grid-template-columns:240px minmax(0,1fr);gap:16px;align-items:start;}
+    .shell-body{display:block;}
     .filter-rail{position:sticky;top:84px;}
     .main-panel{min-width:0;}
     .mobile-tabs{display:none;}
@@ -900,13 +900,6 @@ function App(){
       </header>
 
       <div className="shell-body">
-        <aside className="filter-rail desktop-only">
-          <div className="card">
-            <div className="label-sm">WORKSPACE</div>
-            <div style={{fontSize:12,color:"var(--text-secondary)",lineHeight:1.6}}>Fast prop research from PrizePicks lines and ESPN game logs.</div>
-            <div className="hint-box">Use the sport controls to switch data sources. Filters and saved props arrive in the board phase.</div>
-          </div>
-        </aside>
         <main className="main-panel">
         <div style={{width:"100%",maxWidth:760,margin:"0 auto"}}>
 
