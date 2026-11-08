@@ -95,6 +95,7 @@ CALCS.wnba = CALCS.nba;
 // Falls back to series total for Dota (no per-map data in game log)
 const BASE_STAT = {
   Kills:   (g, maps) => maps ? maps.reduce((s,m)=>s+(m?.kills||0),0)   : (g.kills||0),
+  Headshots: (g, maps) => maps ? maps.reduce((s,m)=>s+(m?.headshots||0),0) : (g.headshots||0),
   Deaths:  (g, maps) => maps ? maps.reduce((s,m)=>s+(m?.deaths||0),0)  : (g.deaths||0),
   Assists: (g, maps) => maps ? maps.reduce((s,m)=>s+(m?.assists||0),0) : (g.assists||0),
   CS:      (g, maps) => maps ? maps.reduce((s,m)=>s+(m?.cs||0),0)      : (g.cs||0),
@@ -155,7 +156,10 @@ const STAT_ALIASES = {
 };
 function normalizedStat(value) { return String(value||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
 function sameStat(a,b) {
-  const left=normalizedStat(a),right=normalizedStat(b);
+  // PrizePicks esports markets prepend the map scope (for example,
+  // "MAPS 1-2 Kills"), while Check a Player uses the base category label.
+  const stripMapScope=value=>String(value||'').replace(/^MAPS?\s+\d+(?:-\d+)?\s+/i,'').trim();
+  const left=normalizedStat(stripMapScope(a)),right=normalizedStat(stripMapScope(b));
   if(left===right)return true;
   return Object.values(STAT_ALIASES).some(group=>group.map(normalizedStat).includes(left)&&group.map(normalizedStat).includes(right));
 }
