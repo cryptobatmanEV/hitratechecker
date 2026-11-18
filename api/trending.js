@@ -735,15 +735,21 @@ export default async function handler(req, res) {
     const playerObjs = {};
     const logMap = {};
 
-    // All sports use the same internal API flow — CS2 uses /api/cs2 like the CS2 tab
-    await Promise.all(unique.map(async name => {
-      const p = await findPlayer(name, sport, host).catch(()=>null);
-      if (p) playerObjs[name] = p;
-    }));
-    const fetchWithTimeout = (p,ms=7000) => Promise.race([p, new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),ms))]);
-    await Promise.all(Object.entries(playerObjs).map(async ([name,p]) => {
-      logMap[name] = await fetchWithTimeout(fetchLog(p,sport,host)).catch(()=>sport==='mlb'?{hitting:[],pitching:[]}:[]);
-    }));
+    // CS2 needs the batched GRID path. Individual seriesState requests are too
+    // expensive when Trending resolves many players at once and routinely
+    // time out, even though the same player's manual search succeeds.
+    if (sport === 'cs2') {
+      Object.assign(logMap, await fetchCS2BatchLogs(unique));
+    } else {
+      await Promise.all(unique.map(async name => {
+        const p = await findPlayer(name, sport, host).catch(()=>null);
+        if (p) playerObjs[name] = p;
+      }));
+      const fetchWithTimeout = (p,ms=7000) => Promise.race([p, new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),ms))]);
+      await Promise.all(Object.entries(playerObjs).map(async ([name,p]) => {
+        logMap[name] = await fetchWithTimeout(fetchLog(p,sport,host)).catch(()=>sport==='mlb'?{hitting:[],pitching:[]}:[]);
+      }));
+    }
 
     const results = [];
     for (const proj of projs) {
@@ -775,7 +781,7 @@ export default async function handler(req, res) {
         pp_stat_matched: projs.length,
         stats_from_pp: seenStats,
         players_found: unique.length,
-        players_id_matched: Object.keys(playerObjs).length,
+        players_id_matched: sport==='cs2' ? Object.keys(logMap).filter(n=>logMap[n]?.length).length : Object.keys(playerObjs).length,
         cs2_step1_found: sport==='cs2' ? 'check via /api/trending-debug' : undefined,
         players_unmatched: unique.filter(n=>!playerObjs[n]).slice(0,5),
         players_empty_log: Object.entries(logMap).filter(([,l])=>!Array.isArray(l)||!l.length).map(([n])=>n).slice(0,5),
