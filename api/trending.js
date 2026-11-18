@@ -429,6 +429,19 @@ async function fetchLog(player, sport, host) {
       return Array.isArray(d) ? d : [];
     }
     if (sport === 'cs2') {
+      // Reuse the same cached CS2 game-log route as manual player research.
+      // It combines HLTV history with GRID enrichment and is substantially
+      // more reliable than issuing raw seriesState queries for every row.
+      if (host && player.id && player.teamId && player.nickname) {
+        const hybridId = player.id.startsWith('hybrid_')
+          ? player.id
+          : `hybrid_${player.id}_${player.teamId}_${player.nickname}`;
+        const r = await fetch(`https://${host}/api/cs2?action=gamelog&playerId=${encodeURIComponent(hybridId)}&stat=kills`, { signal: AbortSignal.timeout(12000) });
+        if (r.ok) {
+          const d = await r.json();
+          if (Array.isArray(d.games) && d.games.length) return d.games;
+        }
+      }
       // Use GRID series state directly — no ScraperAPI needed
       if (!player.teamId) return [];
       const slug = (player.nickname||'').toLowerCase();
@@ -735,11 +748,14 @@ export default async function handler(req, res) {
     const playerObjs = {};
     const logMap = {};
 
-    // CS2 needs the batched GRID path. Individual seriesState requests are too
-    // expensive when Trending resolves many players at once and routinely
-    // time out, even though the same player's manual search succeeds.
+    // CS2 reuses the same cached game-log route as manual player research.
     if (sport === 'cs2') {
-      Object.assign(logMap, await fetchCS2BatchLogs(unique));
+      await Promise.all(unique.map(async name => {
+        const p = await findPlayer(name, sport, host).catch(()=>null);
+        if (!p) return;
+        playerObjs[name] = p;
+        logMap[name] = await fetchLog(p, sport, host).catch(()=>[]);
+      }));
     } else {
       await Promise.all(unique.map(async name => {
         const p = await findPlayer(name, sport, host).catch(()=>null);
